@@ -32,6 +32,8 @@ import {
 const PINATA_API_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS'
 const PINATA_GATEWAY = 'https://gateway.pinata.cloud/ipfs/'
 const PINATA_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI3MzEwZWEyYi1iN2VlLTQxZjAtYmQ4Zi02NzBkYTM1MGNiY2IiLCJlbWFpbCI6ImpvaG5ueXdlc3RtdWxhMjRAb3V0bG9vay5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGluX3BvbGljeSI6eyJyZWdpb25zIjpbeyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJGUkExIn0seyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJOWUMxIn1dLCJ2ZXJzaW9uIjoxfSwibWZhX2VuYWJsZWQiOmZhbHNlLCJzdGF0dXMiOiJBQ1RJVkUifSwiYXV0aGVudGljYXRpb25UeXBlIjoic2NvcGVkS2V5Iiwic2NvcGVkS2V5S2V5IjoiYzhiNTUzZGUzZjI3MzQ1ZmRjMDIiLCJzY29wZWRLZXlTZWNyZXQiOiJjY2U1MTU0ZGZjMmQ2ZjIxOWM1MmIwMmMzZDlmNDYyNGUxNzZhODlhOWEyOTA4MTU3ZDcyZjdjZjM3YmE4YTA0IiwiZXhwIjoxODA0NzcwOTY4fQ.ZUFCLknn0AW5PKvDWGFlrThLHHoBmKILjD_nxXD4bPg'
+const PINATA_JSON_URL = 
+  'https://api.pinata.cloud/pinning/pinJSONToIPFS'
 
 const CreateAuction = () => {
   const navigate = useNavigate();
@@ -59,6 +61,7 @@ const CreateAuction = () => {
 
   const [isUploadingImage, setIsUploadingImage] = useState(false)
   const [ipfsHash, setIpfsHash] = useState(null)
+  const [metadataHash, setMetadataHash] = useState(null)
   const [uploadError, setUploadError] = useState(null)
 
   const [status, setStatus] = useState('idle'); // 'idle', 'minting', 'approving', 'creating', 'success', 'error'
@@ -134,13 +137,55 @@ const CreateAuction = () => {
     }
   }
 
+  const uploadMetadataToIPFS = async (imageIpfsHash) => {
+    try {
+      const metadata = {
+        name: formData.name || 'Stillbid NFT',
+        description: formData.description || '',
+        image: imageIpfsHash 
+          ? `ipfs://${imageIpfsHash}` 
+          : 'https://somnia.network/placeholder.png',
+        attributes: []
+      }
+      const res = await fetch(PINATA_JSON_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${PINATA_JWT}`
+        },
+        body: JSON.stringify({
+          pinataContent: metadata,
+          pinataMetadata: { 
+            name: `${formData.name || 'Stillbid NFT'} - metadata` 
+          },
+          pinataOptions: { cidVersion: 1 }
+        })
+      })
+      if (!res.ok) throw new Error('Metadata upload failed')
+      const data = await res.json()
+      setMetadataHash(data.IpfsHash)
+      return data.IpfsHash
+    } catch (err) {
+      console.error('Metadata upload error:', err)
+      return null
+    }
+  }
+
   const executeMintAndList = async () => {
     try {
       setStatus('minting');
       setError('');
 
-      // 1. Mint NFT
-      const tokenURI = ipfsHash ? `ipfs://${ipfsHash}` : (imageFile ? imagePreview : 'https://somnia.network/placeholder.png');
+      // 1. Upload metadata JSON to IPFS
+      const uploadedMetadataHash = await uploadMetadataToIPFS(
+        ipfsHash
+      )
+      // 1b. Mint NFT with metadata URI
+      const tokenURI = uploadedMetadataHash
+        ? `ipfs://${uploadedMetadataHash}`
+        : (ipfsHash 
+          ? `ipfs://${ipfsHash}` 
+          : 'https://somnia.network/placeholder.png')
       const mintHash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.MOCK_NFT,
         abi: MOCK_NFT_ABI,
@@ -197,12 +242,14 @@ const CreateAuction = () => {
 
       setFinalAuctionId(decodedCreate.args.auctionId.toString());
       setStatus('success');
+      setMetadataHash(null)
     } catch (err) {
       console.error(err);
       setStatus('error');
       setImageFile(null)
       setImagePreview(null)
       setIpfsHash(null)
+      setMetadataHash(null)
       setUploadError(null)
       setIsUploadingImage(false)
       setError(err.shortMessage || 'Transaction failed. Please try again.');
@@ -285,7 +332,7 @@ const CreateAuction = () => {
         {/* Mode Toggle */}
         <div className="bg-white border border-[#E5E7EB] rounded-md overflow-hidden flex mb-6 shadow-sm">
           <button 
-            onClick={() => { setMode('mint'); setStatus('idle'); setImageFile(null); setImagePreview(null); setIpfsHash(null); setUploadError(null); setIsUploadingImage(false); }}
+            onClick={() => { setMode('mint'); setStatus('idle'); setImageFile(null); setImagePreview(null); setIpfsHash(null); setMetadataHash(null); setUploadError(null); setIsUploadingImage(false); }}
             className={`flex-1 py-3 text-sm font-medium transition-all ${mode === 'mint' ? 'border-b-2 border-[#111111] text-[#111111] bg-gray-50/50' : 'text-[#6B7280] border-b-2 border-transparent hover:text-[#111111]'}`}
           >
             Mint & List
@@ -307,7 +354,7 @@ const CreateAuction = () => {
             <h2 className="text-2xl font-bold text-[#111111]">Auction Created!</h2>
             <p className="text-[#6B7280] mt-2 mb-8 lowercase tracking-tight font-medium">Your NFT is now live on the Somnia Auction House.</p>
             <button 
-              onClick={() => { navigate(`/auction/${finalAuctionId}`); setImageFile(null); setImagePreview(null); setIpfsHash(null); setUploadError(null); setIsUploadingImage(false); }}
+              onClick={() => { navigate(`/auction/${finalAuctionId}`); setImageFile(null); setImagePreview(null); setIpfsHash(null); setMetadataHash(null); setUploadError(null); setIsUploadingImage(false); }}
               className="w-full bg-[#111111] text-white py-3 rounded-md font-medium text-sm hover:bg-[#333333] transition-colors flex items-center justify-center gap-2"
             >
               View Auction
