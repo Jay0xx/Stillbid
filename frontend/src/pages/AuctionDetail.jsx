@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAccount, useReadContract, useWriteContract, usePublicClient, useWatchContractEvent } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
-import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI } from '../config/contracts';
+import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
 import { 
   ArrowLeft, 
   Clock, 
@@ -17,6 +17,7 @@ import {
   AlertCircle,
   Loader2
 } from 'lucide-react';
+import NFTImage from '../components/NFTImage'
 
 const AuctionDetail = () => {
   const { id } = useParams();
@@ -36,6 +37,14 @@ const AuctionDetail = () => {
     functionName: 'getAuction',
     args: [BigInt(id)],
   });
+
+  const { data: tokenURIData } = useReadContract({
+    address: auction?.nftContract,
+    abi: MOCK_NFT_ABI,
+    functionName: 'tokenURI',
+    args: [auction?.tokenId],
+    query: { enabled: !!auction?.nftContract && !!auction?.tokenId }
+  })
 
   useEffect(() => {
     if (auction) {
@@ -125,12 +134,12 @@ const AuctionDetail = () => {
           {/* Left: Media Column */}
           <div className="space-y-6">
             <div className="aspect-square bg-white border border-[#E5E7EB] rounded-2xl flex items-center justify-center relative overflow-hidden shadow-sm group">
-              <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
+              <NFTImage
+                tokenURI={tokenURIData || ''}
+                alt={auction?.nftName || 'NFT'}
+                className="w-full h-full object-cover"
+                placeholderClassName="w-full h-full bg-[#F3F4F6] flex items-center justify-center"
+              />
               <div className="absolute top-6 left-6 flex gap-2">
                 <span className="bg-[#111111] text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full">Somnia Verified</span>
                 <span className="bg-white/90 backdrop-blur-sm border border-[#E5E7EB] text-[#111111] text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full">NFT Protocol v1</span>

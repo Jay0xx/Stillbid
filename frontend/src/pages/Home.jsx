@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useReadContract, useReadContracts } from 'wagmi';
 import { formatEther } from 'viem';
-import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI } from '../config/contracts';
+import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
 import { LayoutGrid, Clock, Tag, ExternalLink } from 'lucide-react';
+import NFTImage from '../components/NFTImage'
 
 const AuctionCard = ({ auction, navigate }) => {
   const [timeLeft, setTimeLeft] = useState('');
@@ -40,11 +41,12 @@ const AuctionCard = ({ auction, navigate }) => {
       onClick={() => navigate(`/auction/${auction.auctionId.toString()}`)}
     >
       <div className="h-[220px] bg-[#F3F4F6] flex items-center justify-center relative">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          <circle cx="8.5" cy="8.5" r="1.5"></circle>
-          <polyline points="21 15 16 10 5 21"></polyline>
-        </svg>
+        <NFTImage
+          tokenURI={auction.tokenURI || ''}
+          alt={auction.nftName || 'NFT'}
+          className="w-full h-full object-cover"
+          placeholderClassName="w-full h-full bg-[#F3F4F6] flex items-center justify-center"
+        />
         <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
           Token #{auction.tokenId.toString()}
         </div>
@@ -121,12 +123,34 @@ const Home = () => {
     })),
   });
 
+  const { data: uriData } = useReadContracts({
+    contracts: (activeIds || []).map((id, index) => {
+      const auctionRes = auctionsData?.[index];
+      if (auctionRes?.status === 'success') {
+        const a = auctionRes.result;
+        return {
+          address: a.nftContract,
+          abi: MOCK_NFT_ABI,
+          functionName: 'tokenURI',
+          args: [a.tokenId],
+        };
+      }
+      return null;
+    }).filter(Boolean),
+  });
+
   const auctions = useMemo(() => {
     if (!auctionsData) return [];
-    return auctionsData
+    const baseAuctions = auctionsData
       .filter((res) => res.status === 'success' && res.result.active)
       .map((res) => res.result);
-  }, [auctionsData]);
+      
+    // Add tokenURI from uriData if available
+    return baseAuctions.map((a, index) => {
+      const uri = uriData?.[index]?.status === 'success' ? uriData[index].result : '';
+      return { ...a, tokenURI: uri };
+    });
+  }, [auctionsData, uriData]);
 
   const filteredAuctions = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);

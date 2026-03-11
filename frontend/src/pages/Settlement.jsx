@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAccount, useReadContract, useWriteContract, usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
-import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI } from '../config/contracts';
+import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
 import { 
   CheckCircle2, 
   Loader2, 
@@ -15,6 +15,7 @@ import {
   Gavel,
   Trophy
 } from 'lucide-react';
+import NFTImage from '../components/NFTImage'
 
 const Settlement = () => {
   const { id } = useParams();
@@ -36,6 +37,14 @@ const Settlement = () => {
     functionName: 'getAuction',
     args: [BigInt(id)],
   });
+
+  const { data: tokenURIData } = useReadContract({
+    address: auction?.nftContract,
+    abi: MOCK_NFT_ABI,
+    functionName: 'tokenURI',
+    args: [auction?.tokenId],
+    query: { enabled: !!auction?.nftContract && !!auction?.tokenId }
+  })
 
   const handleSettle = async () => {
     try {

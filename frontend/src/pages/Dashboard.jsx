@@ -3,8 +3,9 @@ import React, { useMemo, useEffect } from 'react';
 import { useAccount, useReadContracts } from 'wagmi';
 import { useNavigate } from 'react-router-dom';
 import { formatEther } from 'viem';
-import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI } from '../config/contracts';
+import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
 import { Layout, History, Clock, TrendingUp } from 'lucide-react';
+import NFTImage from '../components/NFTImage'
 
 const Dashboard = () => {
   const { address, isConnected } = useAccount();
@@ -42,6 +43,22 @@ const Dashboard = () => {
       .map(res => res.result)
       .filter(a => a.seller.toLowerCase() === address.toLowerCase());
   }, [auctionsData, address]);
+
+  const { data: uriData } = useReadContracts({
+    contracts: myAuctions.map(a => ({
+      address: a.nftContract,
+      abi: MOCK_NFT_ABI,
+      functionName: 'tokenURI',
+      args: [a.tokenId],
+    }))
+  });
+
+  const myAuctionsWithURI = useMemo(() => {
+    return myAuctions.map((a, index) => ({
+      ...a,
+      tokenURI: uriData?.[index]?.status === 'success' ? uriData[index].result : ''
+    }));
+  }, [myAuctions, uriData]);
 
   if (!isConnected) {
     return (
@@ -112,14 +129,19 @@ const Dashboard = () => {
           </div>
         ) : myAuctions.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {myAuctions.map((a) => (
+            {myAuctionsWithURI.map((a) => (
               <div 
                 key={a.auctionId.toString()} 
                 className="bg-white border border-[#E5E7EB] rounded-lg overflow-hidden hover:border-[#111111] transition-all cursor-pointer group shadow-sm"
                 onClick={() => navigate(`/auction/${a.auctionId}`)}
               >
                 <div className="h-40 bg-[#F9FAFB] flex items-center justify-center border-b border-[#F3F4F6]">
-                   <span className="text-xs font-bold text-[#9CA3AF] uppercase tracking-widest">NFT #{a.tokenId.toString()}</span>
+                   <NFTImage
+                     tokenURI={a.tokenURI || ''}
+                     alt={a.nftName || 'NFT'}
+                     className="w-full h-full object-cover rounded-md"
+                     placeholderClassName="w-full h-full bg-[#F3F4F6] flex items-center justify-center rounded-md"
+                   />
                 </div>
                 <div className="p-4">
                   <div className="flex justify-between items-start mb-2">

@@ -64,3 +64,36 @@ export const calculateFees = (salePrice) => {
   const sellerReceives = salePrice - platformFee;
   return { platformFee, sellerReceives };
 };
+const IPFS_GATEWAY = 'https://gateway.pinata.cloud/ipfs/'
+const FALLBACK_GATEWAY = 'https://ipfs.io/ipfs/'
+
+export const resolveImageUrl = (tokenURI) => {
+  if (!tokenURI || tokenURI === '') return null
+  // Already a usable HTTP/HTTPS URL
+  if (tokenURI.startsWith('http://') || 
+      tokenURI.startsWith('https://')) return tokenURI
+  // Base64 data URL — usable directly
+  if (tokenURI.startsWith('data:')) return tokenURI
+  // IPFS URI — convert to gateway URL
+  if (tokenURI.startsWith('ipfs://')) {
+    const hash = tokenURI.replace('ipfs://', '')
+    return `${IPFS_GATEWAY}${hash}`
+  }
+  // Raw IPFS hash (no prefix)
+  if (tokenURI.length === 46 && tokenURI.startsWith('Qm')) {
+    return `${IPFS_GATEWAY}${tokenURI}`
+  }
+  if (tokenURI.length === 59 && tokenURI.startsWith('bafy')) {
+    return `${IPFS_GATEWAY}${tokenURI}`
+  }
+  return null
+}
+
+export const resolveFallbackImageUrl = (tokenURI) => {
+  if (!tokenURI || tokenURI === '') return null
+  if (tokenURI.startsWith('ipfs://')) {
+    const hash = tokenURI.replace('ipfs://', '')
+    return `${FALLBACK_GATEWAY}${hash}`
+  }
+  return null
+}
