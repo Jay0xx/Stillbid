@@ -103,12 +103,18 @@ export const AUCTION_HOUSE_ABI = [
   {
     "anonymous": false,
     "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "auctionId", "type": "uint256" },
-      { "indexed": false, "internalType": "address", "name": "nftContract", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "tokenId", "type": "uint256" },
-      { "indexed": true, "internalType": "address", "name": "seller", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "reservePrice", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "endTime", "type": "uint256" }
+      { "indexed": true,  "internalType": "uint256", 
+        "name": "auctionId",    "type": "uint256" },
+      { "indexed": true,  "internalType": "address", 
+        "name": "nftContract",  "type": "address" },
+      { "indexed": false, "internalType": "uint256", 
+        "name": "tokenId",      "type": "uint256" },
+      { "indexed": true,  "internalType": "address", 
+        "name": "seller",       "type": "address" },
+      { "indexed": false, "internalType": "uint256", 
+        "name": "reservePrice", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", 
+        "name": "endTime",      "type": "uint256" }
     ],
     "name": "AuctionCreated",
     "type": "event"

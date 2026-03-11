@@ -29,7 +29,7 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
 
     event AuctionCreated(
         uint256 indexed auctionId,
-        address nftContract,
+        address indexed nftContract,
         uint256 tokenId,
         address indexed seller,
         uint256 reservePrice,
