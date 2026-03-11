@@ -42,7 +42,6 @@ const CreateAuction = () => {
   const [mode, setMode] = useState('mint'); // 'mint' or 'list'
   const [formData, setFormData] = useState({
     name: '',
-    imageUrl: '',
     description: '',
     reservePrice: '',
     duration: '86400', // 24h default
@@ -50,6 +49,9 @@ const CreateAuction = () => {
     nftContract: '',
     tokenId: ''
   });
+
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
 
   const [status, setStatus] = useState('idle'); // 'idle', 'minting', 'approving', 'creating', 'success', 'error'
   const [error, setError] = useState('');
@@ -82,13 +84,22 @@ const CreateAuction = () => {
     if (error) setError('');
   };
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setImageFile(file)
+    const reader = new FileReader()
+    reader.onloadend = () => setImagePreview(reader.result)
+    reader.readAsDataURL(file)
+  }
+
   const executeMintAndList = async () => {
     try {
       setStatus('minting');
       setError('');
 
       // 1. Mint NFT
-      const tokenURI = formData.imageUrl || 'https://somnia.network/placeholder.png';
+      const tokenURI = imageFile ? imagePreview : 'https://somnia.network/placeholder.png';
       const mintHash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.MOCK_NFT,
         abi: MOCK_NFT_ABI,
@@ -148,6 +159,8 @@ const CreateAuction = () => {
     } catch (err) {
       console.error(err);
       setStatus('error');
+      setImageFile(null)
+      setImagePreview(null)
       setError(err.shortMessage || 'Transaction failed. Please try again.');
     }
   };
@@ -228,7 +241,7 @@ const CreateAuction = () => {
         {/* Mode Toggle */}
         <div className="bg-white border border-[#E5E7EB] rounded-md overflow-hidden flex mb-6 shadow-sm">
           <button 
-            onClick={() => { setMode('mint'); setStatus('idle'); }}
+            onClick={() => { setMode('mint'); setStatus('idle'); setImageFile(null); setImagePreview(null); }}
             className={`flex-1 py-3 text-sm font-medium transition-all ${mode === 'mint' ? 'border-b-2 border-[#111111] text-[#111111] bg-gray-50/50' : 'text-[#6B7280] border-b-2 border-transparent hover:text-[#111111]'}`}
           >
             Mint & List
@@ -250,7 +263,7 @@ const CreateAuction = () => {
             <h2 className="text-2xl font-bold text-[#111111]">Auction Created!</h2>
             <p className="text-[#6B7280] mt-2 mb-8 lowercase tracking-tight font-medium">Your NFT is now live on the Somnia Auction House.</p>
             <button 
-              onClick={() => navigate(`/auction/${finalAuctionId}`)}
+              onClick={() => { navigate(`/auction/${finalAuctionId}`); setImageFile(null); setImagePreview(null); }}
               className="w-full bg-[#111111] text-white py-3 rounded-md font-medium text-sm hover:bg-[#333333] transition-colors flex items-center justify-center gap-2"
             >
               View Auction
@@ -292,15 +305,67 @@ const CreateAuction = () => {
                     {errors.name && <p className="text-[10px] text-[#EF4444] mt-1.5 font-bold uppercase tracking-widest">{errors.name}</p>}
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#6B7280] uppercase tracking-wide mb-2 italic">Image URL (Optional)</label>
-                    <input 
-                      name="imageUrl"
-                      value={formData.imageUrl}
-                      onChange={handleInputChange}
-                      placeholder="https://..."
-                      className="w-full border border-[#E5E7EB] rounded-md px-4 py-3 text-[#111111] text-sm focus:outline-none focus:border-[#111111] transition-colors bg-white font-medium"
+                    <label className="text-xs font-medium text-[#6B7280] 
+                      uppercase tracking-wide mb-1 block">
+                      NFT Image (optional)
+                    </label>
+
+                    {/* Upload box — Mint & List mode only */}
+                    <label
+                      htmlFor="nft-image-upload"
+                      className="flex flex-col items-center justify-center 
+                        w-full h-36 border-2 border-dashed border-[#E5E7EB] 
+                        rounded-md cursor-pointer hover:border-[#111111] 
+                        transition-colors bg-white"
+                    >
+                      {imagePreview ? (
+                        <img
+                          src={imagePreview}
+                          alt="NFT preview"
+                          className="h-full w-full object-cover rounded-md"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg"
+                            className="w-8 h-8 text-[#6B7280]"
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round"
+                              strokeWidth={1.5}
+                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 
+                                 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 
+                                 4.5M12 3v13.5" />
+                          </svg>
+                          <span className="text-sm text-[#6B7280]">
+                            Click to upload image
+                          </span>
+                          <span className="text-xs text-[#6B7280]">
+                            PNG, JPG, GIF up to 10MB
+                          </span>
+                        </div>
+                      )}
+                    </label>
+                    <input
+                      id="nft-image-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
                     />
-                    <p className="text-[10px] text-[#6B7280] mt-1.5 font-medium lowercase italic opacity-80">Leave blank to use a default Somnia planetary asset.</p>
+
+                    {/* Clear button — only show when image is selected */}
+                    {imagePreview && (
+                      <button
+                        type="button"
+                        onClick={() => { setImageFile(null); setImagePreview(null) }}
+                        className="mt-2 text-xs text-[#EF4444] hover:underline"
+                      >
+                        Remove image
+                      </button>
+                    )}
+
+                    <p className="text-xs text-[#6B7280] mt-1">
+                      Leave blank to use a placeholder image.
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#6B7280] uppercase tracking-wide mb-2 italic">Description</label>
