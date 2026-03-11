@@ -1,3 +1,4 @@
+// contracts/ReactiveSettlement.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -31,8 +32,18 @@ contract ReactiveSettlement is IReactive {
 
     mapping(uint256 => BidRecord) public latestBids;
 
-    event ReactiveCallback(uint256 auctionId, address bidder, uint256 amount);
-    event BidRecorded(uint256 auctionId, address bidder, uint256 amount, uint256 timestamp);
+    event ReactiveCallback(
+        uint256 indexed auctionId,
+        address indexed bidder,
+        uint256 amount
+    );
+
+    event BidRecorded(
+        uint256 indexed auctionId,
+        address indexed bidder,
+        uint256 amount,
+        uint256 timestamp
+    );
 
     constructor(address _auctionHouse) {
         auctionHouse = _auctionHouse;
@@ -63,7 +74,7 @@ contract ReactiveSettlement is IReactive {
             // Decodes data to extract bidder (address) and amount (uint256)
             (address bidder, uint256 amount) = abi.decode(data, (address, uint256));
 
-            emit ReactiveCallback(auctionId, bidder, amount);
+            emit ReactiveCallback(uint256(auctionId), bidder, uint256(amount));
             recordBid(auctionId, bidder, amount);
         }
     }
@@ -75,7 +86,7 @@ contract ReactiveSettlement is IReactive {
             timestamp: block.timestamp
         });
 
-        emit BidRecorded(auctionId, bidder, amount, block.timestamp);
+        emit BidRecorded(uint256(auctionId), bidder, uint256(amount), uint256(block.timestamp));
     }
 
     function getLatestBid(uint256 auctionId) external view returns (BidRecord memory) {

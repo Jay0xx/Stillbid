@@ -1,3 +1,4 @@
+// contracts/AuctionHouse.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -26,10 +27,30 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
 
     mapping(uint256 => Auction) public auctions;
 
-    event AuctionCreated(uint256 indexed auctionId, address indexed nftContract, uint256 indexed tokenId, address seller, uint256 reservePrice, uint256 endTime);
-    event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint256 amount);
-    event AuctionSettled(uint256 indexed auctionId, address winner, uint256 amount);
-    event AuctionCancelled(uint256 indexed auctionId);
+    event AuctionCreated(
+        uint256 indexed auctionId,
+        address nftContract,
+        uint256 tokenId,
+        address indexed seller,
+        uint256 reservePrice,
+        uint256 endTime
+    );
+
+    event BidPlaced(
+        uint256 indexed auctionId,
+        address indexed bidder,
+        uint256 amount
+    );
+
+    event AuctionSettled(
+        uint256 indexed auctionId,
+        address indexed winner,
+        uint256 amount
+    );
+
+    event AuctionCancelled(
+        uint256 indexed auctionId
+    );
 
     constructor() Ownable(msg.sender) {}
 
@@ -58,7 +79,15 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
             active: true
         });
 
-        emit AuctionCreated(auctionId, nftContract, tokenId, msg.sender, reservePrice, endTime);
+        Auction storage auction = auctions[auctionId];
+        emit AuctionCreated(
+            uint256(auction.auctionId),
+            auction.nftContract,
+            uint256(auction.tokenId),
+            auction.seller,
+            uint256(auction.reservePrice),
+            uint256(auction.endTime)
+        );
     }
 
     function placeBid(uint256 auctionId) external payable nonReentrant {
@@ -79,7 +108,11 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
         auction.highestBid = msg.value;
         auction.highestBidder = payable(msg.sender);
 
-        emit BidPlaced(auctionId, msg.sender, msg.value);
+        emit BidPlaced(
+            uint256(auctionId),
+            msg.sender,
+            uint256(msg.value)
+        );
     }
 
     function settleAuction(uint256 auctionId) external nonReentrant {
@@ -99,11 +132,19 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
             auction.seller.transfer(sellerProceeds);
 
             IERC721(auction.nftContract).safeTransferFrom(address(this), auction.highestBidder, auction.tokenId);
-            emit AuctionSettled(auctionId, auction.highestBidder, auction.highestBid);
+            emit AuctionSettled(
+                uint256(auctionId),
+                auction.highestBidder,
+                uint256(auction.highestBid)
+            );
         } else {
             // No bids, return NFT to seller
             IERC721(auction.nftContract).safeTransferFrom(address(this), auction.seller, auction.tokenId);
-            emit AuctionSettled(auctionId, address(0), 0);
+            emit AuctionSettled(
+                uint256(auctionId),
+                address(0),
+                uint256(0)
+            );
         }
     }
 
@@ -116,7 +157,7 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
         auction.active = false;
         IERC721(auction.nftContract).safeTransferFrom(address(this), auction.seller, auction.tokenId);
 
-        emit AuctionCancelled(auctionId);
+        emit AuctionCancelled(uint256(auctionId));
     }
 
     function getAuction(uint256 auctionId) external view returns (Auction memory) {
