@@ -29,6 +29,10 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+const PINATA_API_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS'
+const PINATA_GATEWAY = 'https://gateway.pinata.cloud/ipfs/'
+const PINATA_JWT = 'PASTE_YOUR_PINATA_JWT_HERE'
+
 const CreateAuction = () => {
   const navigate = useNavigate();
   const { address, isConnected } = useAccount();
@@ -52,6 +56,10 @@ const CreateAuction = () => {
 
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
+  const [ipfsHash, setIpfsHash] = useState(null)
+  const [uploadError, setUploadError] = useState(null)
 
   const [status, setStatus] = useState('idle'); // 'idle', 'minting', 'approving', 'creating', 'success', 'error'
   const [error, setError] = useState('');
@@ -84,13 +92,46 @@ const CreateAuction = () => {
     if (error) setError('');
   };
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setImageFile(file)
+    setIpfsHash(null)
     const reader = new FileReader()
     reader.onloadend = () => setImagePreview(reader.result)
     reader.readAsDataURL(file)
+    await uploadImageToIPFS(file)
+  }
+
+  const uploadImageToIPFS = async (file) => {
+    if (!file) return null
+    setIsUploadingImage(true)
+    setUploadError(null)
+    try {
+      const formDataToUpload = new FormData()
+      formDataToUpload.append('file', file)
+      formDataToUpload.append('pinataMetadata', JSON.stringify({ 
+        name: formData.name || 'Stillbid NFT' 
+      }))
+      formDataToUpload.append('pinataOptions', JSON.stringify({ 
+        cidVersion: 1 
+      }))
+      const res = await fetch(PINATA_API_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${PINATA_JWT}` },
+        body: formDataToUpload,
+      })
+      if (!res.ok) throw new Error('IPFS upload failed')
+      const data = await res.json()
+      const hash = data.IpfsHash
+      setIpfsHash(hash)
+      return `ipfs://${hash}`
+    } catch (err) {
+      setUploadError('Image upload failed. Using placeholder.')
+      return null
+    } finally {
+      setIsUploadingImage(false)
+    }
   }
 
   const executeMintAndList = async () => {
@@ -99,7 +140,7 @@ const CreateAuction = () => {
       setError('');
 
       // 1. Mint NFT
-      const tokenURI = imageFile ? imagePreview : 'https://somnia.network/placeholder.png';
+      const tokenURI = ipfsHash ? `ipfs://${ipfsHash}` : (imageFile ? imagePreview : 'https://somnia.network/placeholder.png');
       const mintHash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.MOCK_NFT,
         abi: MOCK_NFT_ABI,
@@ -161,6 +202,9 @@ const CreateAuction = () => {
       setStatus('error');
       setImageFile(null)
       setImagePreview(null)
+      setIpfsHash(null)
+      setUploadError(null)
+      setIsUploadingImage(false)
       setError(err.shortMessage || 'Transaction failed. Please try again.');
     }
   };
@@ -241,7 +285,7 @@ const CreateAuction = () => {
         {/* Mode Toggle */}
         <div className="bg-white border border-[#E5E7EB] rounded-md overflow-hidden flex mb-6 shadow-sm">
           <button 
-            onClick={() => { setMode('mint'); setStatus('idle'); setImageFile(null); setImagePreview(null); }}
+            onClick={() => { setMode('mint'); setStatus('idle'); setImageFile(null); setImagePreview(null); setIpfsHash(null); setUploadError(null); setIsUploadingImage(false); }}
             className={`flex-1 py-3 text-sm font-medium transition-all ${mode === 'mint' ? 'border-b-2 border-[#111111] text-[#111111] bg-gray-50/50' : 'text-[#6B7280] border-b-2 border-transparent hover:text-[#111111]'}`}
           >
             Mint & List
@@ -263,7 +307,7 @@ const CreateAuction = () => {
             <h2 className="text-2xl font-bold text-[#111111]">Auction Created!</h2>
             <p className="text-[#6B7280] mt-2 mb-8 lowercase tracking-tight font-medium">Your NFT is now live on the Somnia Auction House.</p>
             <button 
-              onClick={() => { navigate(`/auction/${finalAuctionId}`); setImageFile(null); setImagePreview(null); }}
+              onClick={() => { navigate(`/auction/${finalAuctionId}`); setImageFile(null); setImagePreview(null); setIpfsHash(null); setUploadError(null); setIsUploadingImage(false); }}
               className="w-full bg-[#111111] text-white py-3 rounded-md font-medium text-sm hover:bg-[#333333] transition-colors flex items-center justify-center gap-2"
             >
               View Auction
@@ -366,6 +410,24 @@ const CreateAuction = () => {
                     <p className="text-xs text-[#6B7280] mt-1">
                       Leave blank to use a placeholder image.
                     </p>
+
+                    {isUploadingImage && (
+                      <p className="text-xs text-[#6B7280] mt-1 flex items-center gap-1">
+                        <span className="w-3 h-3 border-2 border-[#E5E7EB] 
+                          border-t-[#111111] rounded-full animate-spin inline-block" />
+                        Uploading image to IPFS...
+                      </p>
+                    )}
+                    {ipfsHash && !isUploadingImage && (
+                      <p className="text-xs text-[#10B981] mt-1">
+                        ✓ Image uploaded to IPFS
+                      </p>
+                    )}
+                    {uploadError && (
+                      <p className="text-xs text-[#F59E0B] mt-1">
+                        ⚠ {uploadError}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#6B7280] uppercase tracking-wide mb-2 italic">Description</label>
@@ -474,13 +536,17 @@ const CreateAuction = () => {
             <div className="pt-4 space-y-4">
               <button 
                 onClick={handleSubmit}
-                disabled={!isValid || status === 'minting' || status === 'approving' || status === 'creating'}
-                className={`w-full py-4 rounded-md font-bold text-xs tracking-[0.2em] uppercase transition-all flex items-center justify-center gap-3 ${!isValid || status !== 'idle' && status !== 'error' ? 'bg-[#E5E7EB] text-[#6B7280] cursor-not-allowed shadow-none font-bold' : 'bg-[#111111] text-white hover:bg-[#333333] shadow-lg shadow-black/5 active:scale-[0.98]'}`}
+                disabled={!isValid || status === 'minting' || status === 'approving' || status === 'creating' || isUploadingImage}
+                className={`w-full py-4 rounded-md font-bold text-xs tracking-[0.2em] uppercase transition-all flex items-center justify-center gap-3 ${!isValid || status !== 'idle' && status !== 'error' || isUploadingImage ? 'bg-[#E5E7EB] text-[#6B7280] cursor-not-allowed shadow-none font-bold' : 'bg-[#111111] text-white hover:bg-[#333333] shadow-lg shadow-black/5 active:scale-[0.98]'}`}
               >
-                {status === 'minting' && <><Loader2 className="animate-spin" size={16} /> Minting NFT...</>}
-                {status === 'approving' && <><Loader2 className="animate-spin" size={16} /> Approving Transfer...</>}
-                {status === 'creating' && <><Loader2 className="animate-spin" size={16} /> Finalizing Auction...</>}
-                {(status === 'idle' || status === 'error' || status === 'success') && (mode === 'mint' ? 'Mint & Publish' : 'Authorize & List')}
+                {isUploadingImage ? <><Loader2 className="animate-spin" size={16} /> Uploading Image...</> : (
+                  <>
+                    {status === 'minting' && <><Loader2 className="animate-spin" size={16} /> Minting NFT...</>}
+                    {status === 'approving' && <><Loader2 className="animate-spin" size={16} /> Approving Transfer...</>}
+                    {status === 'creating' && <><Loader2 className="animate-spin" size={16} /> Finalizing Auction...</>}
+                    {(status === 'idle' || status === 'error' || status === 'success') && (mode === 'mint' ? 'Mint & Publish' : 'Authorize & List')}
+                  </>
+                )}
               </button>
               
               {/* Progress Detail */}
