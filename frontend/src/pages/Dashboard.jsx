@@ -83,12 +83,23 @@ const Dashboard = () => {
     }))
   });
 
-  const myAuctionsWithURI = useMemo(() => {
-    return myAuctions.map((a, index) => ({
-      ...a,
-      tokenURI: uriData?.[index]?.status === 'success' ? uriData[index].result : ''
-    }));
-  }, [myAuctions, uriData]);
+  const dashboardTokenURIs = useReadContracts({
+    contracts: (myAuctions || []).map(auction => ({
+      address: auction.nftContract,
+      abi: MOCK_NFT_ABI,
+      functionName: 'tokenURI',
+      args: [auction.tokenId],
+    })),
+    query: { enabled: (myAuctions || []).length > 0 }
+  })
+
+  const myAuctionsWithImages = (myAuctions || []).map(
+    (auction, i) => ({
+      ...auction,
+      resolvedTokenURI: 
+        dashboardTokenURIs.data?.[i]?.result || ''
+    })
+  )
 
   const handleRemoveAuction = async (auction) => {
     setRemovingAuctionId(auction.auctionId)
@@ -273,7 +284,7 @@ const Dashboard = () => {
               </div>
             ) : myAuctions.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myAuctionsWithURI.map((a) => (
+                {myAuctionsWithImages.map((a) => (
                   <div 
                     key={a.auctionId.toString()} 
                     className="bg-white border border-[#E5E7EB] rounded-lg overflow-hidden hover:border-[#111111] transition-all cursor-pointer group shadow-sm flex flex-col"
@@ -282,12 +293,13 @@ const Dashboard = () => {
                       className="h-40 bg-[#F9FAFB] flex items-center justify-center border-b border-[#F3F4F6]"
                       onClick={() => navigate(`/auction/${a.auctionId}`)}
                     >
-                       <NFTImage
-                         tokenURI={a.tokenURI || ''}
-                         alt={a.nftName || 'NFT'}
-                         className="w-full h-full object-cover rounded-md"
-                         placeholderClassName="w-full h-full bg-[#F3F4F6] flex items-center justify-center rounded-md"
-                       />
+  <NFTImage
+    tokenURI={a.resolvedTokenURI || ''}
+    alt={a.nftName || 'NFT'}
+    className="w-full h-full object-cover rounded-md"
+    placeholderClassName="w-full h-full bg-[#F3F4F6] 
+      flex items-center justify-center rounded-md"
+  />
                     </div>
                     <div className="p-4 flex-1 flex flex-col">
                       <div className="flex justify-between items-start mb-2" onClick={() => navigate(`/auction/${a.auctionId}`)}>

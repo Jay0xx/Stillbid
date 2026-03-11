@@ -38,12 +38,16 @@ const Settlement = () => {
     args: [BigInt(id)],
   });
 
-  const { data: tokenURIData } = useReadContract({
+  const { data: settlementTokenURI } = useReadContract({
     address: auction?.nftContract,
     abi: MOCK_NFT_ABI,
     functionName: 'tokenURI',
     args: [auction?.tokenId],
-    query: { enabled: !!auction?.nftContract && !!auction?.tokenId }
+    query: { 
+      enabled: !!(auction?.nftContract) && 
+               auction?.tokenId !== undefined &&
+               auction?.tokenId !== null
+    }
   })
 
   const handleSettle = async () => {
@@ -84,12 +88,14 @@ const Settlement = () => {
           
           {/* Status Header */}
           <div className={`p-8 text-center border-b-2 border-[#111111] ${isSold ? 'bg-green-50' : 'bg-gray-50'}`}>
-            <div className="w-20 h-20 bg-white border-2 border-[#111111] rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-              {isSettled ? (
-                <Trophy size={32} className="text-yellow-500" />
-              ) : (
-                <Clock size={32} className="text-[#111111]" />
-              )}
+            <div className="w-20 h-20 bg-white border-2 border-[#111111] rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm overflow-hidden">
+  <NFTImage
+    tokenURI={settlementTokenURI || ''}
+    alt="NFT"
+    className="w-full h-full object-cover rounded-md"
+    placeholderClassName="w-full h-full bg-[#F3F4F6] 
+      flex items-center justify-center rounded-md"
+  />
             </div>
             <h1 className="text-3xl font-black text-[#111111] uppercase tracking-tight">
               {isSettled ? 'Auction Settled' : 'Final Review'}

@@ -42,10 +42,11 @@ const AuctionCard = ({ auction, navigate }) => {
     >
       <div className="h-[220px] bg-[#F3F4F6] flex items-center justify-center relative">
         <NFTImage
-          tokenURI={auction.tokenURI || ''}
+          tokenURI={auction.resolvedTokenURI || ''}
           alt={auction.nftName || 'NFT'}
           className="w-full h-full object-cover"
-          placeholderClassName="w-full h-full bg-[#F3F4F6] flex items-center justify-center"
+          placeholderClassName="w-full h-full bg-[#F3F4F6] 
+            flex items-center justify-center"
         />
         <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
           Token #{auction.tokenId.toString()}
@@ -152,9 +153,24 @@ const Home = () => {
     });
   }, [auctionsData, uriData]);
 
+  const tokenURIResults = useReadContracts({
+    contracts: auctions.map(auction => ({
+      address: auction.nftContract,
+      abi: MOCK_NFT_ABI,
+      functionName: 'tokenURI',
+      args: [auction.tokenId],
+    })),
+    query: { enabled: auctions.length > 0 }
+  })
+
+  const auctionsWithImages = auctions.map((auction, i) => ({
+    ...auction,
+    resolvedTokenURI: tokenURIResults.data?.[i]?.result || ''
+  }))
+
   const filteredAuctions = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
-    let result = [...auctions];
+    let result = [...auctionsWithImages];
 
     if (filter === 'Ending Soon') {
       result = result
@@ -166,7 +182,7 @@ const Home = () => {
     }
 
     return result;
-  }, [auctions, filter]);
+  }, [auctionsWithImages, filter]);
 
   const isLoading = loadingIds || loadingDetails;
 
