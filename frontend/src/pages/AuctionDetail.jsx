@@ -3,7 +3,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAccount, useReadContract, useWriteContract, usePublicClient, useWatchContractEvent } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
-import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
+import { waitForTransactionReceipt } from 'wagmi/actions';
+import { config as wagmiConfig } from '../config/wagmi';
+import { 
+  CONTRACT_ADDRESSES, 
+  AUCTION_HOUSE_ABI, 
+  MOCK_NFT_ABI,
+  AUCTION_HOUSE_ADDRESS 
+} from '../config/contracts';
+import { formatSTT } from '../utils/format';
 import { 
   ArrowLeft, 
   Clock, 
@@ -19,8 +27,14 @@ import {
 } from 'lucide-react';
 import NFTImage from '../components/NFTImage'
 
+// Gas configuration for Somnia Testnet
+const LOW_GAS_CONFIG = {
+  maxFeePerGas: undefined,
+  maxPriorityFeePerGas: undefined,
+};
+
 const AuctionDetail = () => {
-  const { id } = useParams();
+  const { id: auctionId } = useParams();
   const navigate = useNavigate();
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
@@ -31,11 +45,16 @@ const AuctionDetail = () => {
   const [timeLeft, setTimeLeft] = useState({ h: '00', m: '00', s: '00' });
   const [localBids, setLocalBids] = useState([]);
 
+  // Remove state variables
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
+  const [isRemoving, setIsRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState(null)
+
   const { data: auction, isLoading, refetch } = useReadContract({
     address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
     abi: AUCTION_HOUSE_ABI,
     functionName: 'getAuction',
-    args: [BigInt(id)],
+    args: [BigInt(auctionId)],
   });
 
   const { data: tokenURIData } = useReadContract({
@@ -48,11 +67,11 @@ const AuctionDetail = () => {
 
   useEffect(() => {
     if (auction) {
-      document.title = `Stillbid — Auction #${id}`;
+      document.title = `Stillbid — Auction #${auctionId}`;
     } else {
       document.title = "Stillbid — Auction";
     }
-  }, [auction, id]);
+  }, [auction, auctionId]);
 
   const minBid = useMemo(() => {
     if (!auction) return 0n;
@@ -86,7 +105,7 @@ const AuctionDetail = () => {
     address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
     abi: AUCTION_HOUSE_ABI,
     eventName: 'BidPlaced',
-    args: { auctionId: BigInt(id) },
+    args: { auctionId: BigInt(auctionId) },
     onLogs: (logs) => {
       refetch();
     },
@@ -100,7 +119,7 @@ const AuctionDetail = () => {
         address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
         abi: AUCTION_HOUSE_ABI,
         functionName: 'placeBid',
-        args: [BigInt(id)],
+        args: [BigInt(auctionId)],
         value: parseEther(bidAmount),
       });
       await publicClient.waitForTransactionReceipt({ hash });
@@ -113,6 +132,45 @@ const AuctionDetail = () => {
       setIsBidding(false);
     }
   };
+
+  const handleRemoveAuction = async () => {
+    setIsRemoving(true)
+    setRemoveError(null)
+    try {
+      let hash
+      if (!auction?.highestBid || 
+          auction.highestBid === 0n) {
+        hash = await writeContractAsync({
+          address: AUCTION_HOUSE_ADDRESS,
+          abi: AUCTION_HOUSE_ABI,
+          functionName: 'cancelAuction',
+          args: [BigInt(auctionId)],
+          maxFeePerGas: LOW_GAS_CONFIG.maxFeePerGas,
+          maxPriorityFeePerGas: 
+            LOW_GAS_CONFIG.maxPriorityFeePerGas,
+        })
+      } else {
+        hash = await writeContractAsync({
+          address: AUCTION_HOUSE_ADDRESS,
+          abi: AUCTION_HOUSE_ABI,
+          functionName: 'forceEndAuction',
+          args: [BigInt(auctionId)],
+          maxFeePerGas: LOW_GAS_CONFIG.maxFeePerGas,
+          maxPriorityFeePerGas: 
+            LOW_GAS_CONFIG.maxPriorityFeePerGas,
+        })
+      }
+      await waitForTransactionReceipt(wagmiConfig, { hash })
+      setIsRemoving(false)
+      setShowRemoveConfirm(false)
+      navigate('/')
+    } catch (err) {
+      setRemoveError(
+        err?.shortMessage || 'Transaction failed.'
+      )
+      setIsRemoving(false)
+    }
+  }
 
   if (isLoading) return <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center"><Loader2 className="animate-spin text-[#111111]" /></div>;
   if (!auction) return <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center font-bold">Auction not found.</div>;
@@ -174,7 +232,7 @@ const AuctionDetail = () => {
               <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${isExpired ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700 animate-pulse'}`}>
                 {isExpired ? 'Auction Ended' : 'Live Auction'}
               </span>
-              <span className="text-[#6B7280] text-xs font-medium">#{id}</span>
+              <span className="text-[#6B7280] text-xs font-medium">#{auctionId}</span>
             </div>
 
             <h1 className="text-4xl font-black text-[#111111] mb-2 tracking-tight">NFT {auction.nftContract.slice(0, 8)}</h1>
@@ -229,6 +287,25 @@ const AuctionDetail = () => {
                   {!isConnected && (
                     <p className="text-center text-[10px] font-bold text-[#6B7280] uppercase tracking-widest">Connect wallet to place bids</p>
                   )}
+
+                  {/* Seller Controls */}
+                  {isOwner && (
+                    <div className="pt-6 border-t border-[#F3F4F6] mt-6">
+                      <button
+                        onClick={() => setShowRemoveConfirm(true)}
+                        disabled={isRemoving}
+                        className="border border-[#EF4444] text-[#EF4444] 
+                          rounded-md px-4 py-2 text-sm mt-2 w-full
+                          hover:bg-[#FEF2F2] transition-colors
+                          disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {auction?.highestBid === 0n || 
+                         !auction?.highestBid
+                          ? 'Cancel Auction'
+                          : 'Remove Auction'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -237,7 +314,7 @@ const AuctionDetail = () => {
                    </div>
                    {isOwner && !auction.settled && (
                      <button 
-                       onClick={() => navigate(`/settle/${id}`)}
+                       onClick={() => navigate(`/settle/${auctionId}`)}
                        className="w-full bg-[#111111] text-white py-4 rounded-xl font-black uppercase tracking-widest hover:bg-black transition-colors"
                      >
                        Settle Auction &rarr;
@@ -262,6 +339,89 @@ const AuctionDetail = () => {
         </div>
 
       </div>
+
+      {showRemoveConfirm && (
+        <div className="fixed inset-0 bg-black/20 
+          flex items-center justify-center z-50 px-4">
+          <div className="bg-white border border-[#E5E7EB] 
+            rounded-lg p-6 max-w-sm w-full">
+
+            <h3 className="font-semibold text-[#111111] text-base">
+              {!auction?.highestBid || 
+               auction.highestBid === 0n
+                ? 'Cancel Auction'
+                : 'Remove Auction'}
+            </h3>
+
+            <p className="text-sm text-[#6B7280] mt-2">
+              {!auction?.highestBid || 
+               auction.highestBid === 0n
+                ? 'This will cancel your auction and return the NFT to your wallet. This cannot be undone.'
+                : 'This will immediately refund the highest bidder and return your NFT to your wallet. This cannot be undone.'
+              }
+            </p>
+
+            {auction?.highestBid > 0n && (
+              <div className="mt-3 bg-[#FFF7ED] border 
+                border-[#FED7AA] rounded-md p-3 
+                text-xs text-[#92400E]">
+                Highest bidder will be refunded{' '}
+                <span className="font-semibold">
+                  {formatSTT(auction.highestBid)} STT
+                </span>{' '}
+                automatically.
+              </div>
+            )}
+
+            {removeError && (
+              <p className="mt-3 text-xs text-[#EF4444]">
+                {removeError}
+              </p>
+            )}
+
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => {
+                  setShowRemoveConfirm(false)
+                  setRemoveError(null)
+                }}
+                disabled={isRemoving}
+                className="flex-1 border border-[#E5E7EB] 
+                  text-[#111111] rounded-md py-2 text-sm
+                  hover:border-[#111111] transition-colors
+                  disabled:cursor-not-allowed 
+                  disabled:text-[#6B7280]"
+              >
+                Keep Auction
+              </button>
+              <button
+                onClick={handleRemoveAuction}
+                disabled={isRemoving}
+                className="flex-1 bg-[#EF4444] text-white 
+                  rounded-md py-2 text-sm font-medium
+                  hover:bg-[#DC2626] transition-colors
+                  disabled:bg-[#FCA5A5]
+                  disabled:cursor-not-allowed
+                  flex items-center justify-center gap-2"
+              >
+                {isRemoving ? (
+                  <>
+                    <span className="w-3 h-3 border-2 
+                      border-white/40 border-t-white 
+                      rounded-full animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  !auction?.highestBid || 
+                  auction.highestBid === 0n
+                    ? 'Cancel Auction'
+                    : 'Remove & Refund'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

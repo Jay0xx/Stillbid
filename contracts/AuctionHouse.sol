@@ -52,7 +52,56 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
         uint256 indexed auctionId
     );
 
+    event AuctionForceEnded(
+        uint256 indexed auctionId,
+        address indexed seller,
+        address indexed refundedBidder,
+        uint256 refundedAmount
+    );
+
     constructor() Ownable(msg.sender) {}
+
+    function forceEndAuction(
+        uint256 auctionId
+    ) external nonReentrant {
+        Auction storage auction = auctions[auctionId];
+        require(
+            msg.sender == auction.seller, 
+            "Only seller"
+        );
+        require(auction.active, "Not active");
+        require(!auction.settled, "Already settled");
+        require(
+            auction.highestBid > 0, 
+            "No bids, use cancelAuction"
+        );
+
+        // Refund highest bidder immediately
+        address payable bidder = auction.highestBidder;
+        uint256 refundAmount = auction.highestBid;
+
+        auction.highestBid = 0;
+        auction.highestBidder = payable(address(0));
+        auction.active = false;
+        auction.settled = true;
+
+        // Return NFT to seller
+        IERC721(auction.nftContract).safeTransferFrom(
+            address(this),
+            auction.seller,
+            auction.tokenId
+        );
+
+        // Refund bidder
+        bidder.transfer(refundAmount);
+
+        emit AuctionForceEnded(
+            uint256(auctionId),
+            auction.seller,
+            bidder,
+            refundAmount
+        );
+    }
 
     function createAuction(
         address nftContract,
