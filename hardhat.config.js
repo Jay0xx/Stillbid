@@ -1,3 +1,4 @@
+// hardhat.config.js
 import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
 
@@ -15,8 +16,9 @@ export default {
   networks: {
     somnia: {
       url: "https://dream-rpc.somnia.network",
-      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
       chainId: 50312,
+      accounts: process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [],
+      gasPrice: 10000000000, // 10 gwei
     },
   },
 };
