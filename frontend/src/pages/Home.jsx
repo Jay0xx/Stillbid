@@ -55,16 +55,16 @@ const AuctionCard = ({ auction, navigate }) => {
           placeholderClassName="w-full h-full bg-[#F3F4F6] 
             flex items-center justify-center"
         />
-        <div className="absolute top-2 right-2">
-          <WatchButton
-            auctionId={auction.auctionId}
-            currentPrice={auction.highestBid}
-            size="sm"
-          />
-        </div>
-        <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
-          Token #{auction.tokenId.toString()}
-        </div>
+      <div className="absolute top-2 right-2 z-10">
+        <WatchButton
+          auctionId={auction.auctionId}
+          currentPrice={auction.highestBid}
+          size="sm"
+        />
+      </div>
+      <div className="absolute bottom-3 left-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
+        Token #{auction.tokenId.toString()}
+      </div>
       </div>
       
       <div className="p-4">
