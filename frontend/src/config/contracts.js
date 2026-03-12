@@ -1,8 +1,8 @@
 // src/config/contracts.js
 
-export const MOCK_NFT_ADDRESS = "0x46f7e0E0233193147502fddd31ad5DD5B762c5DF";
-export const AUCTION_HOUSE_ADDRESS = "0xB3c6Ab035755d3121F17A0D4203D876aD6Aed421";
-export const REACTIVE_SETTLEMENT_ADDRESS = "0x57227CCD87FA2500De0E3201CBA8626c6c749F42";
+export const MOCK_NFT_ADDRESS = "0x3b402afC339d7C9a0d71f72b7a97bB448F156d47";
+export const AUCTION_HOUSE_ADDRESS = "0x46AD5cea74218F049B57B487BF082C764Aa70Fbb";
+export const REACTIVE_SETTLEMENT_ADDRESS = "0x332c1cfcE23F7870E7775e52E102EaC094325247";
 
 export const CONTRACT_ADDRESSES = {
   AUCTION_HOUSE: AUCTION_HOUSE_ADDRESS,
@@ -138,6 +138,31 @@ export const AUCTION_HOUSE_ABI = [
     ],
     "name": "BidPlaced",
     "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "uint256", 
+        "name": "auctionId", "type": "uint256" },
+      { "indexed": true, "internalType": "address", 
+        "name": "seller", "type": "address" },
+      { "indexed": true, "internalType": "address", 
+        "name": "buyer", "type": "address" },
+      { "indexed": false, "internalType": "uint256", 
+        "name": "amount", "type": "uint256" }
+    ],
+    "name": "BidAccepted",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", 
+        "name": "auctionId", "type": "uint256" }
+    ],
+    "name": "acceptBid",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   },
   {
     "anonymous": false,

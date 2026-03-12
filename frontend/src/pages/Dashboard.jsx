@@ -1,6 +1,9 @@
 // c:\Users\a\.gemini\antigravity\scratch\mock-nft\frontend\src\pages\Dashboard.jsx
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAccount, useReadContracts, useWriteContract } from 'wagmi';
+import { usePublicClient } from 'wagmi'
+import { formatAddress } from '../utils/format'
+import useNFTMetadata from '../hooks/useNFTMetadata'
 import { useNavigate } from 'react-router-dom';
 import { formatEther } from 'viem';
 import { waitForTransactionReceipt } from 'wagmi/actions';
@@ -25,10 +28,200 @@ const LOW_GAS_CONFIG = {
   maxPriorityFeePerGas: undefined,
 };
 
+const BidStatusBadge = ({ status }) => {
+  const styles = {
+    Winning: 'bg-[#F0FDF4] text-[#10B981]',
+    Outbid:  'bg-[#FEF2F2] text-[#EF4444]',
+    Won:     'bg-[#F0FDF4] text-[#10B981]',
+    Lost:    'bg-[#F3F4F6] text-[#6B7280]',
+    Expired: 'bg-[#FFF7ED] text-[#F59E0B]',
+  }
+  const labels = {
+    Winning: '👑 Winning',
+    Outbid:  'Outbid',
+    Won:     '🏆 Won',
+    Lost:    'Lost',
+    Expired: 'Expired',
+  }
+  return (
+    <span className={`text-xs font-medium px-2 py-0.5 
+      rounded-full ${styles[status] || 
+      'bg-[#F3F4F6] text-[#6B7280]'}`}>
+      {labels[status] || status}
+    </span>
+  )
+}
+
+const BidAuctionCard = ({ bidData, isExpanded, 
+  onToggle, onNavigate }) => {
+  const { auction, myHighestBid, history, 
+          status, auctionId } = bidData
+  const { data: tokenURIData } = useReadContracts({
+    contracts: [{
+      address: auction.nftContract,
+      abi: MOCK_NFT_ABI,
+      functionName: 'tokenURI',
+      args: [auction.tokenId],
+    }],
+    query: { enabled: !!auction.nftContract }
+  })
+  const tokenURI = tokenURIData?.[0]?.result || ''
+  const { metadata } = useNFTMetadata(tokenURI)
+
+  return (
+    <div className="bg-white border border-[#E5E7EB] 
+      rounded-lg overflow-hidden">
+      
+      {/* Main row */}
+      <div className="p-4 flex items-center gap-4">
+        
+        {/* NFT thumbnail */}
+        <div className="w-14 h-14 rounded-md overflow-hidden 
+          flex-shrink-0 bg-[#F3F4F6]">
+          <NFTImage
+            tokenURI={tokenURI}
+            alt="NFT"
+            className="w-full h-full object-cover"
+            placeholderClassName="w-full h-full 
+              bg-[#F3F4F6] flex items-center 
+              justify-center"
+          />
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 
+            flex-wrap">
+            <p className="text-sm font-semibold 
+              text-[#111111] truncate">
+              {metadata?.name || 
+               `Auction #${auctionId}`}
+            </p>
+            <BidStatusBadge status={status} />
+          </div>
+          <p className="text-xs text-[#6B7280] mt-0.5">
+            Auction #{auctionId}
+          </p>
+          <div className="flex items-center gap-4 mt-2">
+            <div>
+              <p className="text-[10px] uppercase 
+                tracking-wide text-[#6B7280]">
+                Your Highest Bid
+              </p>
+              <p className="text-sm font-bold 
+                text-[#111111]">
+                {formatEther(myHighestBid)} STT
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase 
+                tracking-wide text-[#6B7280]">
+                Current Highest
+              </p>
+              <p className="text-sm font-bold 
+                text-[#111111]">
+                {formatEther(auction.highestBid)} STT
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Right actions */}
+        <div className="flex flex-col gap-2 
+          flex-shrink-0 items-end">
+          <button
+            onClick={() => onNavigate(auctionId)}
+            className="border border-[#E5E7EB] 
+              text-[#111111] text-xs px-3 py-1.5 
+              rounded-md hover:border-[#111111] 
+              transition-colors"
+          >
+            View
+          </button>
+          <button
+            onClick={onToggle}
+            className="text-xs text-[#6B7280] 
+              hover:text-[#111111] transition-colors"
+          >
+            {isExpanded ? 'Hide history ↑' : 
+              `History (${history.length}) ↓`}
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded bid history */}
+      {isExpanded && (
+        <div className="border-t border-[#F3F4F6] 
+          bg-[#FAFAFA] px-4 py-3">
+          <p className="text-xs font-bold uppercase 
+            tracking-widest text-[#6B7280] mb-3">
+            Your Bid History
+          </p>
+          {history.length === 0 ? (
+            <p className="text-xs text-[#6B7280]">
+              No bids found.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {history.map((bid, i) => (
+                <div key={i}
+                  className="flex justify-between 
+                    items-center py-2 border-b 
+                    border-[#F3F4F6] last:border-0">
+                  <div className="flex items-center 
+                    gap-2">
+                    {i === 0 && (
+                      <span className="text-[10px] 
+                        bg-[#111111] text-white 
+                        px-1.5 py-0.5 rounded 
+                        font-medium">
+                        Latest
+                      </span>
+                    )}
+                    <span className="text-xs 
+                      font-mono text-[#6B7280]">
+                      {bid.txHash
+                        ? `${bid.txHash.slice(0,6)}...${bid.txHash.slice(-4)}`
+                        : `Block #${bid.blockNumber}`
+                      }
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold 
+                    text-[#111111]">
+                    {formatEther(bid.amount)} STT
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Expiry reason */}
+          <div className="mt-3 pt-3 border-t 
+            border-[#F3F4F6]">
+            <p className="text-xs text-[#6B7280]">
+              {status === 'Winning' && 
+                '🟢 You are the current highest bidder. Bid expires if you are outbid.'}
+              {status === 'Outbid' && 
+                '🔴 You were outbid. Place a higher bid to stay in the auction.'}
+              {status === 'Won' && 
+                '🏆 You won this auction. The NFT has been transferred to your wallet.'}
+              {status === 'Lost' && 
+                '⚫ This auction was won by another bidder. Your bid has expired.'}
+              {status === 'Expired' && 
+                '⏱ This auction ended without a sale. Your bid has expired.'}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const Dashboard = () => {
   const { address, isConnected } = useAccount();
   const navigate = useNavigate();
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient()
 
   const [activeTab, setActiveTab] = useState('auctions')
   const [walletNFTs, setWalletNFTs] = useState([])
@@ -40,6 +233,13 @@ const Dashboard = () => {
   const [removingAuctionId, setRemovingAuctionId] = useState(null)
   const [removeError, setRemoveError] = useState(null)
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(null)
+
+  const [acceptingBidId, setAcceptingBidId] = useState(null)
+  const [acceptBidError, setAcceptBidError] = useState(null)
+  const [myBids, setMyBids] = useState([])
+  const [isFetchingBids, setIsFetchingBids] = useState(false)
+  const [bidsError, setBidsError] = useState(null)
+  const [expandedBidId, setExpandedBidId] = useState(null)
 
   useEffect(() => {
     document.title = "Stillbid — Dashboard";
@@ -143,6 +343,32 @@ const Dashboard = () => {
     }
   }
 
+  const handleAcceptBid = async (auction) => {
+    setAcceptingBidId(auction.auctionId)
+    setAcceptBidError(null)
+    try {
+      const hash = await writeContractAsync({
+        address: AUCTION_HOUSE_ADDRESS,
+        abi: AUCTION_HOUSE_ABI,
+        functionName: 'acceptBid',
+        args: [BigInt(auction.auctionId)],
+        maxFeePerGas: LOW_GAS_CONFIG.maxFeePerGas,
+        maxPriorityFeePerGas:
+          LOW_GAS_CONFIG.maxPriorityFeePerGas,
+      })
+      await waitForTransactionReceipt(wagmiConfig, { 
+        hash 
+      })
+      setAcceptingBidId(null)
+      navigate(`/settle/${auction.auctionId}`)
+    } catch (err) {
+      setAcceptBidError(
+        err?.shortMessage || 'Transaction failed.'
+      )
+      setAcceptingBidId(null)
+    }
+  }
+
   const fetchWalletAssets = async () => {
     if (!address) return
     setIsFetchingAssets(true)
@@ -178,9 +404,132 @@ const Dashboard = () => {
     }
   }
 
+  const fetchMyBids = async () => {
+    if (!address || !publicClient) return
+    setIsFetchingBids(true)
+    setBidsError(null)
+    try {
+      // Fetch all BidPlaced logs where bidder = userAddress
+      const logs = await publicClient.getLogs({
+        address: AUCTION_HOUSE_ADDRESS,
+        event: {
+          type: 'event',
+          name: 'BidPlaced',
+          inputs: [
+            { indexed: true, name: 'auctionId', 
+              type: 'uint256' },
+            { indexed: true, name: 'bidder', 
+              type: 'address' },
+            { indexed: false, name: 'amount', 
+              type: 'uint256' },
+          ],
+        },
+        args: { bidder: address },
+        fromBlock: 0n,
+        toBlock: 'latest',
+      })
+
+      if (logs.length === 0) {
+        setMyBids([])
+        setIsFetchingBids(false)
+        return
+      }
+
+      // Get unique auction IDs from logs
+      const uniqueAuctionIds = [
+        ...new Set(logs.map(l => l.args.auctionId.toString()))
+      ]
+
+      // Fetch full auction data for each unique ID
+      const auctionResults = await Promise.all(
+        uniqueAuctionIds.map(id =>
+          publicClient.readContract({
+            address: AUCTION_HOUSE_ADDRESS,
+            abi: AUCTION_HOUSE_ABI,
+            functionName: 'getAuction',
+            args: [BigInt(id)],
+          }).catch(() => null)
+        )
+      )
+
+      // Build bid history per auction from logs
+      const bidsByAuction = {}
+      logs.forEach(log => {
+        const id = log.args.auctionId.toString()
+        if (!bidsByAuction[id]) bidsByAuction[id] = []
+        bidsByAuction[id].push({
+          amount: log.args.amount,
+          blockNumber: log.blockNumber,
+          txHash: log.transactionHash,
+        })
+      })
+
+      // Build final bids array
+      const bidsWithData = uniqueAuctionIds
+        .map((id, i) => {
+          const auction = auctionResults[i]
+          if (!auction) return null
+          const history = bidsByAuction[id] || []
+          // User's highest bid in this auction
+          const myHighestBid = history.reduce(
+            (max, b) => b.amount > max ? b.amount : max,
+            0n
+          )
+          // Determine status
+          const isHighestBidder = 
+            auction.highestBidder?.toLowerCase() === 
+            address.toLowerCase()
+          let status = 'Outbid'
+          if (auction.active && isHighestBidder) {
+            status = 'Winning'
+          } else if (auction.active && !isHighestBidder) {
+            status = 'Outbid'
+          } else if (auction.settled && isHighestBidder) {
+            status = 'Won'
+          } else if (
+            auction.settled && 
+            !isHighestBidder &&
+            auction.highestBid > 0n
+          ) {
+            status = 'Lost'
+          } else if (
+            !auction.active && 
+            !auction.settled
+          ) {
+            status = 'Expired'
+          }
+          return {
+            auctionId: id,
+            auction,
+            myHighestBid,
+            history: history.sort((a, b) => 
+              Number(b.blockNumber) - Number(a.blockNumber)
+            ),
+            status,
+            isHighestBidder,
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => Number(b.auctionId) - Number(a.auctionId))
+
+      setMyBids(bidsWithData)
+    } catch (err) {
+      console.error(err)
+      setBidsError('Could not load bid history.')
+    } finally {
+      setIsFetchingBids(false)
+    }
+  }
+
   useEffect(() => {
     if (activeTab === 'assets' && address) {
       fetchWalletAssets()
+    }
+  }, [activeTab, address])
+
+  useEffect(() => {
+    if (activeTab === 'bids' && address) {
+      fetchMyBids()
     }
   }, [activeTab, address])
 
@@ -347,7 +696,41 @@ const Dashboard = () => {
                             Remove
                           </button>
                         )}
+                        {a.active && (a.highestBid > 0n || 
+                          a.highestBid > 0) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAcceptBid(a);
+                            }}
+                            disabled={acceptingBidId === a.auctionId}
+                            className="bg-[#10B981] text-white text-xs 
+                              px-3 py-1.5 rounded-md
+                              hover:bg-[#059669] transition-colors
+                              disabled:bg-[#6EE7B7]
+                              disabled:cursor-not-allowed
+                              flex items-center gap-1"
+                          >
+                            {acceptingBidId === a.auctionId ? (
+                              <>
+                                <span className="w-3 h-3 border-2 
+                                  border-white/40 border-t-white 
+                                  rounded-full animate-spin" />
+                                Accepting...
+                              </>
+                            ) : (
+                              '✓ Accept'
+                            )}
+                          </button>
+                        )}
                       </div>
+                      {/* Accept bid error */}
+                      {acceptBidError && 
+                       acceptingBidId === null && (
+                        <p className="text-xs text-[#EF4444] mt-1">
+                          {acceptBidError}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -364,10 +747,121 @@ const Dashboard = () => {
 
         {/* My Bids Tab */}
         {activeTab === 'bids' && (
-          <div className="bg-white border border-[#E5E7EB] rounded-xl py-24 text-center">
-            <Layout size={40} className="mx-auto text-[#E5E7EB] mb-4" />
-            <p className="text-[#6B7280] font-medium">No bids placed yet.</p>
-            <p className="text-xs text-[#9CA3AF] mt-1">Your bid history will appear here.</p>
+          <div>
+            {/* Header */}
+            <div className="flex items-center 
+              justify-between mb-6">
+              <div>
+                <h2 className="text-xs font-black uppercase 
+                  tracking-[0.2em] text-[#6B7280]">
+                  My Bids
+                </h2>
+                <div className="h-[1px] bg-[#E5E7EB] 
+                  mt-2 mb-0" />
+              </div>
+              <button
+                onClick={fetchMyBids}
+                disabled={isFetchingBids}
+                className="text-xs text-[#6B7280] 
+                  hover:text-[#111111] border 
+                  border-[#E5E7EB] rounded-md px-3 py-1.5
+                  disabled:cursor-not-allowed 
+                  transition-colors"
+              >
+                {isFetchingBids ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+
+            {/* Loading skeleton */}
+            {isFetchingBids && (
+              <div className="space-y-4">
+                {[1, 2, 3].map(i => (
+                  <div key={i}
+                    className="bg-white border 
+                      border-[#E5E7EB] rounded-lg p-4 
+                      animate-pulse">
+                    <div className="flex gap-4">
+                      <div className="w-14 h-14 
+                        bg-[#F3F4F6] rounded-md" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-[#F3F4F6] 
+                          rounded w-1/2" />
+                        <div className="h-3 bg-[#F3F4F6] 
+                          rounded w-1/3" />
+                        <div className="h-3 bg-[#F3F4F6] 
+                          rounded w-1/4" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Error */}
+            {bidsError && !isFetchingBids && (
+              <div className="bg-[#FEF2F2] border 
+                border-[#FECACA] text-[#991B1B] 
+                rounded-md p-4 text-sm text-center">
+                {bidsError}
+                <button
+                  onClick={fetchMyBids}
+                  className="block mx-auto mt-2 
+                    text-xs underline"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {/* Bids list */}
+            {!isFetchingBids && !bidsError && 
+              myBids.length > 0 && (
+              <div className="space-y-4">
+                {myBids.map(bidData => (
+                  <BidAuctionCard
+                    key={bidData.auctionId}
+                    bidData={bidData}
+                    isExpanded={
+                      expandedBidId === bidData.auctionId
+                    }
+                    onToggle={() => setExpandedBidId(
+                      expandedBidId === bidData.auctionId
+                        ? null
+                        : bidData.auctionId
+                    )}
+                    onNavigate={(id) => 
+                      navigate(`/auction/${id}`)
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!isFetchingBids && !bidsError && 
+              myBids.length === 0 && (
+              <div className="bg-white border 
+                border-[#E5E7EB] rounded-xl py-24 
+                text-center">
+                <Layout size={40} 
+                  className="mx-auto text-[#E5E7EB] mb-4" />
+                <p className="text-[#6B7280] font-medium">
+                  No bids placed yet.
+                </p>
+                <p className="text-xs text-[#9CA3AF] mt-1">
+                  Auctions you bid on will appear here 
+                  with full history.
+                </p>
+                <button
+                  onClick={() => navigate('/')}
+                  className="mt-4 bg-[#111111] text-white 
+                    px-4 py-2 rounded-md text-sm 
+                    hover:bg-[#333333] transition-colors"
+                >
+                  Browse Auctions →
+                </button>
+              </div>
+            )}
           </div>
         )}
 

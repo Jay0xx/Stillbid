@@ -59,6 +59,13 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
         uint256 refundedAmount
     );
 
+    event BidAccepted(
+        uint256 indexed auctionId,
+        address indexed seller,
+        address indexed buyer,
+        uint256 amount
+    );
+
     constructor() Ownable(msg.sender) {}
 
     function forceEndAuction(
@@ -100,6 +107,57 @@ contract AuctionHouse is ReentrancyGuard, Ownable {
             auction.seller,
             bidder,
             refundAmount
+        );
+    }
+
+    function acceptBid(
+        uint256 auctionId
+    ) external nonReentrant {
+        Auction storage auction = auctions[auctionId];
+        require(
+            msg.sender == auction.seller,
+            "Only seller"
+        );
+        require(auction.active, "Not active");
+        require(!auction.settled, "Already settled");
+        require(
+            auction.highestBid > 0,
+            "No bids to accept"
+        );
+        require(
+            auction.highestBidder != address(0),
+            "No bidder"
+        );
+
+        auction.settled = true;
+        auction.active = false;
+
+        uint256 platformFee = (auction.highestBid * 
+            PLATFORM_FEE_BPS) / BPS_DIVISOR;
+        uint256 sellerProceeds = auction.highestBid - 
+            platformFee;
+
+        address buyer = auction.highestBidder;
+        uint256 saleAmount = auction.highestBid;
+
+        // Transfer NFT to buyer
+        IERC721(auction.nftContract).safeTransferFrom(
+            address(this),
+            buyer,
+            auction.tokenId
+        );
+
+        // Pay platform fee
+        payable(owner()).transfer(platformFee);
+
+        // Pay seller
+        auction.seller.transfer(sellerProceeds);
+
+        emit BidAccepted(
+            uint256(auctionId),
+            auction.seller,
+            buyer,
+            uint256(saleAmount)
         );
     }
 

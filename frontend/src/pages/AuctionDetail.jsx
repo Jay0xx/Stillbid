@@ -52,6 +52,10 @@ const AuctionDetail = () => {
   const [isRemoving, setIsRemoving] = useState(false)
   const [removeError, setRemoveError] = useState(null)
 
+  const [isAcceptingBid, setIsAcceptingBid] = useState(false)
+  const [acceptBidError, setAcceptBidError] = useState(null)
+  const [acceptBidSuccess, setAcceptBidSuccess] = useState(false)
+
   const { data: auction, isLoading, refetch } = useReadContract({
     address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
     abi: AUCTION_HOUSE_ABI,
@@ -182,6 +186,33 @@ const AuctionDetail = () => {
     }
   }
 
+  const handleAcceptBid = async () => {
+    setIsAcceptingBid(true)
+    setAcceptBidError(null)
+    try {
+      const hash = await writeContractAsync({
+        address: AUCTION_HOUSE_ADDRESS,
+        abi: AUCTION_HOUSE_ABI,
+        functionName: 'acceptBid',
+        args: [BigInt(auctionId)],
+        maxFeePerGas: LOW_GAS_CONFIG.maxFeePerGas,
+        maxPriorityFeePerGas:
+          LOW_GAS_CONFIG.maxPriorityFeePerGas,
+      })
+      await waitForTransactionReceipt(wagmiConfig, { 
+        hash 
+      })
+      setAcceptBidSuccess(true)
+      setIsAcceptingBid(false)
+      navigate(`/settle/${auctionId}`)
+    } catch (err) {
+      setAcceptBidError(
+        err?.shortMessage || 'Transaction failed.'
+      )
+      setIsAcceptingBid(false)
+    }
+  }
+
   if (isLoading) return <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center"><Loader2 className="animate-spin text-[#111111]" /></div>;
   if (!auction) return <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center font-bold">Auction not found.</div>;
 
@@ -303,6 +334,66 @@ const AuctionDetail = () => {
                   {/* Seller Controls */}
                   {isOwner && (
                     <div className="pt-6 border-t border-[#F3F4F6] mt-6">
+                      {/* Accept Bid button — only show when bids exist */}
+                      {auction?.highestBid > 0n && (
+                        <div className="mt-4">
+                          {/* Current bid info row */}
+                          <div className="bg-[#F9FAFB] border border-[#E5E7EB] 
+                            rounded-md p-3 mb-3">
+                            <p className="text-xs text-[#6B7280] uppercase 
+                              tracking-wide">
+                              Current Highest Bid
+                            </p>
+                            <p className="text-lg font-bold text-[#111111] mt-0.5">
+                              {formatSTT(auction.highestBid)} STT
+                            </p>
+                            <p className="text-xs text-[#6B7280] mt-0.5 
+                              font-mono">
+                              by {auction.highestBidder.slice(0, 6)}...{auction.highestBidder.slice(-4)}
+                            </p>
+                          </div>
+
+                          {/* Accept Bid button */}
+                          <button
+                            onClick={handleAcceptBid}
+                            disabled={isAcceptingBid}
+                            className="w-full bg-[#10B981] text-white 
+                              rounded-md px-4 py-3 text-sm font-medium
+                              hover:bg-[#059669] transition-colors
+                              disabled:bg-[#6EE7B7] 
+                              disabled:cursor-not-allowed
+                              flex items-center justify-center gap-2"
+                          >
+                            {isAcceptingBid ? (
+                              <>
+                                <span className="w-4 h-4 border-2 
+                                  border-white/40 border-t-white 
+                                  rounded-full animate-spin" />
+                                Accepting Bid...
+                              </>
+                            ) : (
+                              <>
+                                ✓ Accept This Bid
+                              </>
+                            )}
+                          </button>
+
+                          {/* Helper text */}
+                          <p className="text-xs text-[#6B7280] mt-2 
+                            text-center">
+                            Instantly closes the auction and transfers 
+                            the NFT to the highest bidder.
+                          </p>
+
+                          {/* Error */}
+                          {acceptBidError && (
+                            <p className="text-xs text-[#EF4444] mt-2 
+                              text-center">
+                              {acceptBidError}
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <button
                         onClick={() => setShowRemoveConfirm(true)}
                         disabled={isRemoving}
