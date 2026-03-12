@@ -476,26 +476,31 @@ const Dashboard = () => {
     setIsFetchingAssets(true)
     setAssetsFetchError(null)
     try {
-      // Step 1: Get total token count from MockNFT
-      const totalTokens = await publicClient.readContract({
-        address: MOCK_NFT_ADDRESS,
-        abi: MOCK_NFT_ABI,
-        functionName: 'tokenCounter',
-      })
+      const totalTokensRaw = await publicClient
+        .readContract({
+          address: MOCK_NFT_ADDRESS,
+          abi: MOCK_NFT_ABI,
+          functionName: 'tokenCounter',
+        })
 
-      if (!totalTokens || totalTokens === 0n) {
+      // Normalize to Number — tokenCounter may return
+      // bigint or number depending on RPC response
+      const totalTokens = Number(totalTokensRaw)
+
+      if (!totalTokens || totalTokens === 0) {
         setWalletNFTs([])
         setIsFetchingAssets(false)
         return
       }
 
-      // Step 2: Check ownership of all tokens in batches
+      // MockNFT starts tokenCounter at 0 and
+      // increments before assigning — first token
+      // is ID 1, last is ID totalTokens
       const tokenIds = Array.from(
-        { length: Number(totalTokens) }, 
+        { length: totalTokens },
         (_, i) => BigInt(i + 1)
       )
 
-      // Batch read ownerOf for all tokens
       const ownerResults = await publicClient
         .multicall({
           contracts: tokenIds.map(id => ({
@@ -507,7 +512,6 @@ const Dashboard = () => {
           allowFailure: true,
         })
 
-      // Batch read tokenURI for all tokens
       const uriResults = await publicClient
         .multicall({
           contracts: tokenIds.map(id => ({
@@ -519,20 +523,19 @@ const Dashboard = () => {
           allowFailure: true,
         })
 
-      // Filter tokens owned by connected wallet
       const ownedNFTs = []
       for (let i = 0; i < tokenIds.length; i++) {
         const ownerResult = ownerResults[i]
         if (
           ownerResult.status === 'success' &&
-          ownerResult.result?.toLowerCase() === 
-          address.toLowerCase()
+          ownerResult.result?.toLowerCase() ===
+            address.toLowerCase()
         ) {
           const tokenId = tokenIds[i]
-          const tokenURI = uriResults[i].status === 
-            'success' 
-            ? uriResults[i].result 
-            : ''
+          const tokenURI =
+            uriResults[i].status === 'success'
+              ? uriResults[i].result
+              : ''
           ownedNFTs.push({
             contractAddress: MOCK_NFT_ADDRESS,
             tokenId: tokenId.toString(),
@@ -543,19 +546,10 @@ const Dashboard = () => {
         }
       }
 
-      // Also check AuctionHouse contract for NFTs
-      // won from auctions (now owned by wallet)
-      // These are already included above since
-      // safeTransferFrom moves them to winner wallet
-      // so ownerOf will return winner address
-
       setWalletNFTs(ownedNFTs)
+      // Empty wallet is NOT an error —
+      // the empty state JSX handles it cleanly
 
-      if (ownedNFTs.length === 0) {
-        setAssetsFetchError(
-          'No Stillbid NFTs found in this wallet.'
-        )
-      }
     } catch (err) {
       console.error('fetchWalletAssets error:', err)
       setAssetsFetchError(
@@ -571,8 +565,8 @@ const Dashboard = () => {
     setIsFetchingBids(true)
     setBidsError(null)
     try {
-      // Step 1: Get all auction IDs ever created
-      // by reading auctionCounter from contract
+      // Read auctionCounter directly — do NOT use
+      // getActiveAuctions() as it misses ended auctions
       const auctionCounter = await publicClient
         .readContract({
           address: AUCTION_HOUSE_ADDRESS,
@@ -580,6 +574,9 @@ const Dashboard = () => {
           functionName: 'auctionCounter',
         })
 
+      // auctionCounter starts at 1 and post-increments
+      // so total auctions = auctionCounter - 1
+      // IDs are 1 ... (auctionCounter - 1)
       const totalAuctions = Number(auctionCounter) - 1
       if (totalAuctions <= 0) {
         setMyBids([])
@@ -587,12 +584,13 @@ const Dashboard = () => {
         return
       }
 
-      // Step 2: Fetch all auctions in one multicall
+      // Build ALL auction IDs — not just active ones
       const allIds = Array.from(
         { length: totalAuctions },
         (_, i) => BigInt(i + 1)
       )
 
+      // Fetch ALL auctions in one multicall
       const auctionResults = await publicClient
         .multicall({
           contracts: allIds.map(id => ({
@@ -604,79 +602,74 @@ const Dashboard = () => {
           allowFailure: true,
         })
 
-      // Step 3: Filter auctions where user is or 
-      // was the highestBidder
-      // Also try recent getLogs for bid history
-      // with limited block range to avoid RPC timeout
+      // Fetch ALL user BidPlaced logs in ONE call
+      // before the loop — never inside the loop
+      let allUserLogs = []
+      try {
+        const latestBlock = await publicClient
+          .getBlockNumber()
+        const fromBlock = latestBlock > 50000n
+          ? latestBlock - 50000n
+          : 0n
+        allUserLogs = await publicClient.getLogs({
+          address: AUCTION_HOUSE_ADDRESS,
+          event: {
+            type: 'event',
+            name: 'BidPlaced',
+            inputs: [
+              { indexed: true, name: 'auctionId',
+                type: 'uint256' },
+              { indexed: true, name: 'bidder',
+                type: 'address' },
+              { indexed: false, name: 'amount',
+                type: 'uint256' },
+            ],
+          },
+          args: { bidder: address },
+          fromBlock,
+          toBlock: 'latest',
+        })
+      } catch {
+        allUserLogs = []
+      }
+
       const myBidAuctions = []
-      
+
       for (let i = 0; i < allIds.length; i++) {
         const result = auctionResults[i]
         if (result.status !== 'success') continue
         const auction = result.result
         const auctionId = allIds[i].toString()
 
-        // Check if user is current highest bidder
-        const isHighestBidder = 
-          auction.highestBidder?.toLowerCase() === 
+        const isHighestBidder =
+          auction.highestBidder?.toLowerCase() ===
           address.toLowerCase()
 
-        // Try to get bid history from recent logs
-        // Use last 50000 blocks to avoid RPC limits
-        let history = []
-        try {
-          const latestBlock = await publicClient
-            .getBlockNumber()
-          const fromBlock = latestBlock > 50000n 
-            ? latestBlock - 50000n 
-            : 0n
-          
-          const logs = await publicClient.getLogs({
-            address: AUCTION_HOUSE_ADDRESS,
-            event: {
-              type: 'event',
-              name: 'BidPlaced',
-              inputs: [
-                { indexed: true, name: 'auctionId',
-                  type: 'uint256' },
-                { indexed: true, name: 'bidder',
-                  type: 'address' },
-                { indexed: false, name: 'amount',
-                  type: 'uint256' },
-              ],
-            },
-            args: { 
-              auctionId: BigInt(auctionId),
-              bidder: address 
-            },
-            fromBlock,
-            toBlock: 'latest',
-          })
-
-          history = logs.map(log => ({
+        // Filter pre-fetched logs for this auction
+        // Pure JS — no RPC call inside the loop
+        const history = allUserLogs
+          .filter(log =>
+            log.args.auctionId?.toString() === auctionId
+          )
+          .map(log => ({
             amount: log.args.amount,
             blockNumber: log.blockNumber,
             txHash: log.transactionHash,
-          })).sort((a, b) => 
+          }))
+          .sort((a, b) =>
             Number(b.blockNumber) - Number(a.blockNumber)
           )
-        } catch {
-          // getLogs failed — still show auction
-          // if user is highest bidder
-          history = []
-        }
 
-        // Include auction if:
-        // - user is current highest bidder, OR
-        // - we found bid logs for this user
+        // Include if user is highest bidder OR 
+        // has bid logs for this auction
         if (!isHighestBidder && history.length === 0) {
           continue
         }
 
-        // Determine bid status
-        const isActive = auction.active && 
-          Number(auction.endTime) > 
-          Math.floor(Date.now() / 1000)
+        const isActive =
+          auction.active &&
+          Number(auction.endTime) >
+            Math.floor(Date.now() / 1000)
 
         let status = 'Outbid'
         if (isActive && isHighestBidder) {
@@ -686,7 +679,8 @@ const Dashboard = () => {
         } else if (auction.settled && isHighestBidder) {
           status = 'Won'
         } else if (
-          auction.settled && !isHighestBidder &&
+          auction.settled &&
+          !isHighestBidder &&
           auction.highestBid > 0n
         ) {
           status = 'Lost'
@@ -696,16 +690,15 @@ const Dashboard = () => {
           status = 'Expired'
         }
 
-        // User's highest bid from history or 
-        // fallback to current if they are winner
-        const myHighestBid = history.length > 0
-          ? history.reduce(
-              (max, b) => b.amount > max 
-                ? b.amount : max, 
-              0n
-            )
-          : isHighestBidder 
-            ? auction.highestBid 
+        const myHighestBid =
+          history.length > 0
+            ? history.reduce(
+                (max, b) =>
+                  b.amount > max ? b.amount : max,
+                0n
+              )
+            : isHighestBidder
+            ? auction.highestBid
             : 0n
 
         myBidAuctions.push({
@@ -718,9 +711,9 @@ const Dashboard = () => {
         })
       }
 
-      // Sort by auctionId descending (newest first)
-      myBidAuctions.sort((a, b) => 
-        Number(b.auctionId) - Number(a.auctionId)
+      myBidAuctions.sort(
+        (a, b) =>
+          Number(b.auctionId) - Number(a.auctionId)
       )
 
       setMyBids(myBidAuctions)
