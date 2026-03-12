@@ -6,6 +6,7 @@ import {
   useWriteContract, 
   usePublicClient 
 } from 'wagmi';
+import { useQueryClient } from '@tanstack/react-query'
 import { 
   parseEther, 
   isAddress, 
@@ -40,6 +41,7 @@ const CreateAuction = () => {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     document.title = "Stillbid — Create Auction";
@@ -241,6 +243,9 @@ const CreateAuction = () => {
       });
 
       setFinalAuctionId(decodedCreate.args.auctionId.toString());
+      // Invalidate all wagmi queries so Home and 
+      // Dashboard refetch auction data immediately
+      queryClient.invalidateQueries()
       setStatus('success');
       setMetadataHash(null)
     } catch (err) {
@@ -294,6 +299,9 @@ const CreateAuction = () => {
       });
 
       setFinalAuctionId(decodedCreate.args.auctionId.toString());
+      // Invalidate all wagmi queries so Home and
+      // Dashboard refetch auction data immediately
+      queryClient.invalidateQueries()
       setStatus('success');
     } catch (err) {
       console.error(err);
@@ -422,9 +430,7 @@ const CreateAuction = () => {
                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round"
                               strokeWidth={1.5}
-                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 
-                                 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 
-                                 4.5M12 3v13.5" />
+                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                           </svg>
                           <span className="text-sm text-[#6B7280]">
                             Click to upload image

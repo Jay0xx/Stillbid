@@ -4,7 +4,8 @@ import useNFTMetadata from '../hooks/useNFTMetadata'
 import WatchButton from '../components/WatchButton'
 
 import { useNavigate } from 'react-router-dom';
-import { useReadContract, useReadContracts } from 'wagmi';
+import { useReadContract, useReadContracts, usePublicClient } from 'wagmi';
+import { useQueryClient } from '@tanstack/react-query'
 import { formatEther } from 'viem';
 import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
 import { LayoutGrid, Clock, Tag, ExternalLink } from 'lucide-react';
@@ -123,68 +124,88 @@ const Home = () => {
     document.title = "Stillbid — Live Auctions";
   }, []);
 
-  const { data: activeIds, isLoading: loadingIds } = useReadContract({
-    address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-    abi: AUCTION_HOUSE_ABI,
-    functionName: 'getActiveAuctions',
-  });
+  const publicClient = usePublicClient()
+  const [auctions, setAuctions] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  const { data: auctionsData, isLoading: loadingDetails } = useReadContracts({
-    contracts: (activeIds || []).map((id) => ({
-      address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-      abi: AUCTION_HOUSE_ABI,
-      functionName: 'getAuction',
-      args: [id],
-    })),
-  });
+  const fetchAuctions = async () => {
+    if (!publicClient) return
+    setIsLoading(true)
+    try {
+      // Step 1: get all active auction IDs
+      const activeIds = await publicClient.readContract({
+        address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
+        abi: AUCTION_HOUSE_ABI,
+        functionName: 'getActiveAuctions',
+      })
 
-  const { data: uriData } = useReadContracts({
-    contracts: (activeIds || []).map((id, index) => {
-      const auctionRes = auctionsData?.[index];
-      if (auctionRes?.status === 'success') {
-        const a = auctionRes.result;
-        return {
-          address: a.nftContract,
-          abi: MOCK_NFT_ABI,
-          functionName: 'tokenURI',
-          args: [a.tokenId],
-        };
+      if (!activeIds || activeIds.length === 0) {
+        setAuctions([])
+        setIsLoading(false)
+        return
       }
-      return null;
-    }).filter(Boolean),
-  });
 
-  const auctions = useMemo(() => {
-    if (!auctionsData) return [];
-    const baseAuctions = auctionsData
-      .filter((res) => res.status === 'success' && res.result.active)
-      .map((res) => res.result);
-      
-    // Add tokenURI from uriData if available
-    return baseAuctions.map((a, index) => {
-      const uri = uriData?.[index]?.status === 'success' ? uriData[index].result : '';
-      return { ...a, tokenURI: uri };
-    });
-  }, [auctionsData, uriData]);
+      // Step 2: fetch each auction individually
+      // Somnia does not support multicall3 so we
+      // use Promise.all of individual readContract calls
+      const auctionResults = await Promise.all(
+        activeIds.map(id =>
+          publicClient.readContract({
+            address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
+            abi: AUCTION_HOUSE_ABI,
+            functionName: 'getAuction',
+            args: [id],
+          }).then(result => ({ 
+            status: 'success', result 
+          })).catch(() => ({ 
+            status: 'failure' 
+          }))
+        )
+      )
 
-  const tokenURIResults = useReadContracts({
-    contracts: auctions.map(auction => ({
-      address: auction.nftContract,
-      abi: MOCK_NFT_ABI,
-      functionName: 'tokenURI',
-      args: [auction.tokenId],
-    })),
-    query: { enabled: auctions.length > 0 }
-  })
+      const validAuctions = auctionResults
+        .filter(r => r.status === 'success' && 
+          r.result.active)
+        .map(r => r.result)
 
-  const auctionsWithImages = auctions.map((auction, i) => ({
-    ...auction,
-    resolvedTokenURI: tokenURIResults.data?.[i]?.result || ''
-  }))
+      // Step 3: fetch tokenURIs individually
+      const uriResults = await Promise.all(
+        validAuctions.map(a =>
+          publicClient.readContract({
+            address: a.nftContract,
+            abi: MOCK_NFT_ABI,
+            functionName: 'tokenURI',
+            args: [a.tokenId],
+          }).then(result => result).catch(() => '')
+        )
+      )
+
+      const auctionsWithImages = validAuctions.map(
+        (a, i) => ({
+          ...a,
+          resolvedTokenURI: uriResults[i] || '',
+        })
+      )
+
+      setAuctions(auctionsWithImages)
+    } catch (err) {
+      console.error('fetchAuctions error:', err)
+      setAuctions([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Fetch on mount and poll every 15 seconds
+  useEffect(() => {
+    fetchAuctions()
+    const interval = setInterval(fetchAuctions, 15000)
+    return () => clearInterval(interval)
+  }, [publicClient])
 
   const filteredAuctions = useMemo(() => {
     const now = Math.floor(Date.now() / 1000);
-    let result = [...auctionsWithImages];
+    let result = [...auctions];
 
     if (filter === 'Ending Soon') {
       result = result
@@ -196,9 +217,7 @@ const Home = () => {
     }
 
     return result;
-  }, [auctionsWithImages, filter]);
-
-  const isLoading = loadingIds || loadingDetails;
+  }, [auctions, filter]);
 
   return (
     <div className="min-h-screen bg-[#FAFAFA]">
