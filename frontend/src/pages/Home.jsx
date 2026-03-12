@@ -1,5 +1,7 @@
 // src/pages/Home.jsx
 import React, { useState, useEffect, useMemo } from 'react';
+import useNFTMetadata from '../hooks/useNFTMetadata'
+
 import { useNavigate } from 'react-router-dom';
 import { useReadContract, useReadContracts } from 'wagmi';
 import { formatEther } from 'viem';
@@ -8,7 +10,11 @@ import { LayoutGrid, Clock, Tag, ExternalLink } from 'lucide-react';
 import NFTImage from '../components/NFTImage'
 
 const AuctionCard = ({ auction, navigate }) => {
+  const { metadata } = useNFTMetadata(
+    auction.resolvedTokenURI || ''
+  )
   const [timeLeft, setTimeLeft] = useState('');
+
   const [isEndingSoon, setIsEndingSoon] = useState(false);
 
   useEffect(() => {
@@ -55,7 +61,7 @@ const AuctionCard = ({ auction, navigate }) => {
       
       <div className="p-4">
         <h3 className="font-semibold text-[#111111] text-base truncate group-hover:text-[#111111]">
-          Auction #{auction.auctionId.toString()} • NFT {auction.nftContract.slice(0, 6)}...
+          {metadata?.name || auction.nftName || 'Unnamed NFT'}
         </h3>
         
         <div className="mt-2">

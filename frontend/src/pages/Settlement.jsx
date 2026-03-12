@@ -1,5 +1,7 @@
 // src/pages/Settlement.jsx
 import React, { useState, useEffect } from 'react';
+import useNFTMetadata from '../hooks/useNFTMetadata'
+
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAccount, useReadContract, useWriteContract, usePublicClient } from 'wagmi';
 import { formatEther } from 'viem';
@@ -50,6 +52,10 @@ const Settlement = () => {
     }
   })
 
+  const { metadata: settlementMetadata } = useNFTMetadata(
+    settlementTokenURI || ''
+  )
+
   const handleSettle = async () => {
     try {
       setSettlingStatus('settling');
@@ -91,14 +97,14 @@ const Settlement = () => {
             <div className="w-20 h-20 bg-white border-2 border-[#111111] rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm overflow-hidden">
   <NFTImage
     tokenURI={settlementTokenURI || ''}
-    alt="NFT"
+    alt={settlementMetadata?.name || 'Unnamed NFT'}
     className="w-full h-full object-cover rounded-md"
     placeholderClassName="w-full h-full bg-[#F3F4F6] 
       flex items-center justify-center rounded-md"
   />
             </div>
             <h1 className="text-3xl font-black text-[#111111] uppercase tracking-tight">
-              {isSettled ? 'Auction Settled' : 'Final Review'}
+              {settlementMetadata?.name || 'Unnamed NFT'}
             </h1>
             <p className="text-sm text-[#6B7280] mt-2">
               {isSettled ? 'Settled on Somnia via Stillbid.' : 'Auction has concluded. Pending finalization.'}

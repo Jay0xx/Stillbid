@@ -1,7 +1,6 @@
 // src/components/NFTImage.jsx
 import { useState, useEffect } from 'react'
-import { resolveImageUrl, resolveFallbackUrl } 
-  from '../utils/imageUtils'
+import useNFTMetadata from '../hooks/useNFTMetadata'
 
 const Placeholder = ({ className }) => (
   <div className={className}>
@@ -14,53 +13,66 @@ const Placeholder = ({ className }) => (
         strokeWidth={1}
         d="M4 16l4.586-4.586a2 2 0 012.828 
            0L16 16m-2-2l1.586-1.586a2 2 0 
-           012.828 0L20 14m-6-6h.01M6 20h12a2 
-           2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 
-           00-2 2v12a2 2 0 002 2z" />
+           012.828 0L20 14m-6-6h.01M6 20h12
+           a2 2 0 002-2V6a2 2 0 00-2-2H6a2 
+           2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
   </div>
 )
 
-export default function NFTImage({ 
-  tokenURI, 
-  alt, 
+export default function NFTImage({
+  tokenURI,
+  alt,
   className,
-  placeholderClassName 
+  placeholderClassName
 }) {
-  const [imgSrc, setImgSrc] = useState(null)
-  const [triedFallback, setTriedFallback] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const { metadata, isLoading } = useNFTMetadata(tokenURI)
+  const [imgFailed, setImgFailed] = useState(false)
+  const [fallbackTried, setFallbackTried] = useState(false)
+  const [currentSrc, setCurrentSrc] = useState(null)
 
   useEffect(() => {
-    setFailed(false)
-    setTriedFallback(false)
-    const resolved = resolveImageUrl(tokenURI)
-    setImgSrc(resolved)
-  }, [tokenURI])
+    setImgFailed(false)
+    setFallbackTried(false)
+    setCurrentSrc(metadata?.resolvedImage || null)
+  }, [metadata?.resolvedImage])
 
   const handleError = () => {
-    if (!triedFallback) {
-      const fallback = resolveFallbackUrl(tokenURI)
-      if (fallback && fallback !== imgSrc) {
-        setTriedFallback(true)
-        setImgSrc(fallback)
+    if (!fallbackTried && metadata?.image) {
+      setFallbackTried(true)
+      const fallback = metadata.image.startsWith('ipfs://')
+        ? `https://ipfs.io/ipfs/${
+            metadata.image.replace('ipfs://', '')
+          }`
+        : null
+      if (fallback) {
+        setCurrentSrc(fallback)
         return
       }
     }
-    setFailed(true)
+    setImgFailed(true)
   }
 
-  const placeholderClass = placeholderClassName || 
-    "w-full h-full bg-[#F3F4F6] flex items-center justify-center"
+  const ph = placeholderClassName ||
+    'w-full h-full bg-[#F3F4F6] flex items-center justify-center'
 
-  if (!imgSrc || failed) {
-    return <Placeholder className={placeholderClass} />
+  if (isLoading) {
+    return (
+      <div className={ph}>
+        <div className="w-6 h-6 border-2 border-[#E5E7EB] 
+          border-t-[#D1D5DB] rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (!currentSrc || imgFailed) {
+    return <Placeholder className={ph} />
   }
 
   return (
     <img
-      src={imgSrc}
-      alt={alt || 'NFT'}
+      src={currentSrc}
+      alt={alt || metadata?.name || 'NFT'}
       className={className}
       onError={handleError}
     />
