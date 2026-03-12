@@ -128,29 +128,63 @@ const Home = () => {
   const [auctions, setAuctions] = useState([])
   const [isLoading, setIsLoading] = useState(true)
 
+  const readWithRetry = async (params, retries = 3) => {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const result = await publicClient.readContract(
+          params
+        )
+        // If result is undefined/null on non-last 
+        // attempt, retry
+        if (result === undefined && 
+            attempt < retries - 1) {
+          await new Promise(r => setTimeout(r, 1000))
+          continue
+        }
+        return result
+      } catch (err) {
+        const isZeroData = 
+          err?.message?.includes('zero data') ||
+          err?.message?.includes('0x') ||
+          err?.name === 'AbiDecodingZeroDataError' ||
+          err?.name === 'ContractFunctionExecutionError'
+        
+        if (isZeroData && attempt < retries - 1) {
+          // Wait longer each retry
+          await new Promise(r => 
+            setTimeout(r, 1000 * (attempt + 1))
+          )
+          continue
+        }
+        throw err
+      }
+    }
+  }
+
   const fetchAuctions = async () => {
     if (!publicClient) return
     setIsLoading(true)
     try {
-      // Do NOT use getActiveAuctions() — Somnia RPC
-      // returns 0x for it consistently.
-      // Instead read auctionCounter and scan all IDs.
+      // Use retry wrapper for all Somnia RPC calls
       let auctionCounter
       try {
-        auctionCounter = await publicClient.readContract({
+        auctionCounter = await readWithRetry({
           address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
           abi: AUCTION_HOUSE_ABI,
           functionName: 'auctionCounter',
         })
-      } catch {
+      } catch (err) {
+        console.error('auctionCounter failed:', 
+          err.message)
         setAuctions([])
         setIsLoading(false)
         return
       }
 
-      // auctionCounter starts at 1 and post-increments
-      // so total auctions = auctionCounter - 1
       const total = Number(auctionCounter) - 1
+      console.log('auctionCounter:', 
+        Number(auctionCounter), 'total:', total)
+
       if (total <= 0) {
         setAuctions([])
         setIsLoading(false)
@@ -162,26 +196,25 @@ const Home = () => {
         (_, i) => BigInt(i + 1)
       )
 
-      // Fetch all auctions individually —
-      // Somnia does not support multicall3
       const auctionResults = await Promise.all(
         allIds.map(id =>
-          publicClient.readContract({
+          readWithRetry({
             address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
             abi: AUCTION_HOUSE_ABI,
             functionName: 'getAuction',
             args: [id],
           }).then(result => ({ 
             status: 'success', result 
-          })).catch(() => ({ 
-            status: 'failure' 
-          }))
+          })).catch(err => {
+            console.error(`getAuction(${id}) failed:`,
+              err.message)
+            return { status: 'failure' }
+          })
         )
       )
 
       const now = Math.floor(Date.now() / 1000)
 
-      // Filter for active auctions only in JS
       const validAuctions = auctionResults
         .filter(r =>
           r.status === 'success' &&
@@ -190,16 +223,17 @@ const Home = () => {
         )
         .map(r => r.result)
 
+      console.log('validAuctions:', validAuctions.length)
+
       if (validAuctions.length === 0) {
         setAuctions([])
         setIsLoading(false)
         return
       }
 
-      // Fetch tokenURIs individually
       const uriResults = await Promise.all(
         validAuctions.map(a =>
-          publicClient.readContract({
+          readWithRetry({
             address: a.nftContract,
             abi: MOCK_NFT_ABI,
             functionName: 'tokenURI',
@@ -218,7 +252,7 @@ const Home = () => {
       setAuctions(auctionsWithImages)
 
     } catch (err) {
-      console.error('fetchAuctions error:', err)
+      console.error('fetchAuctions error:', err.message)
       setAuctions([])
     } finally {
       setIsLoading(false)
