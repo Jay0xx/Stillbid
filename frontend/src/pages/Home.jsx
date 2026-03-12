@@ -129,25 +129,31 @@ const Home = () => {
   const [isLoading, setIsLoading] = useState(true)
 
   const fetchAuctions = async () => {
-    if (!publicClient) return
+    if (!publicClient) {
+      console.log('[Stillbid] fetchAuctions: no publicClient')
+      return
+    }
     setIsLoading(true)
+    console.log('[Stillbid] fetchAuctions: starting...')
+    console.log('[Stillbid] AUCTION_HOUSE address:', 
+      CONTRACT_ADDRESSES.AUCTION_HOUSE)
     try {
-      // Step 1: get all active auction IDs
       const activeIds = await publicClient.readContract({
         address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
         abi: AUCTION_HOUSE_ABI,
         functionName: 'getActiveAuctions',
       })
+      console.log('[Stillbid] activeIds raw:', activeIds)
+      console.log('[Stillbid] activeIds length:', 
+        activeIds?.length)
 
       if (!activeIds || activeIds.length === 0) {
+        console.log('[Stillbid] getActiveAuctions returned empty — no active auctions on contract')
         setAuctions([])
         setIsLoading(false)
         return
       }
 
-      // Step 2: fetch each auction individually
-      // Somnia does not support multicall3 so we
-      // use Promise.all of individual readContract calls
       const auctionResults = await Promise.all(
         activeIds.map(id =>
           publicClient.readContract({
@@ -155,20 +161,37 @@ const Home = () => {
             abi: AUCTION_HOUSE_ABI,
             functionName: 'getAuction',
             args: [id],
-          }).then(result => ({ 
-            status: 'success', result 
-          })).catch(() => ({ 
-            status: 'failure' 
-          }))
+          }).then(result => {
+            console.log(`[Stillbid] getAuction(${id}):`, 
+              result)
+            console.log(`[Stillbid] auction ${id} active:`, 
+              result.active)
+            console.log(`[Stillbid] auction ${id} endTime:`, 
+              Number(result.endTime), 
+              'now:', Math.floor(Date.now() / 1000))
+            return { status: 'success', result }
+          }).catch(err => {
+            console.log(`[Stillbid] getAuction(${id}) FAILED:`, err.message)
+            return { status: 'failure' }
+          })
         )
       )
 
       const validAuctions = auctionResults
-        .filter(r => r.status === 'success' && 
-          r.result.active)
+        .filter(r => {
+          const passes = r.status === 'success' && 
+            r.result.active
+          if (!passes) console.log(
+            '[Stillbid] auction filtered out:', r
+          )
+          return passes
+        })
         .map(r => r.result)
 
-      // Step 3: fetch tokenURIs individually
+      console.log('[Stillbid] validAuctions count:', 
+        validAuctions.length)
+      console.log('[Stillbid] validAuctions:', validAuctions)
+
       const uriResults = await Promise.all(
         validAuctions.map(a =>
           publicClient.readContract({
@@ -176,7 +199,13 @@ const Home = () => {
             abi: MOCK_NFT_ABI,
             functionName: 'tokenURI',
             args: [a.tokenId],
-          }).then(result => result).catch(() => '')
+          }).then(result => {
+            console.log(`[Stillbid] tokenURI for token ${a.tokenId}:`, result)
+            return result
+          }).catch(err => {
+            console.log(`[Stillbid] tokenURI for token ${a.tokenId} FAILED:`, err.message)
+            return ''
+          })
         )
       )
 
@@ -187,9 +216,14 @@ const Home = () => {
         })
       )
 
+      console.log('[Stillbid] final auctionsWithImages:', 
+        auctionsWithImages)
       setAuctions(auctionsWithImages)
+
     } catch (err) {
-      console.error('fetchAuctions error:', err)
+      console.error('[Stillbid] fetchAuctions FATAL:', 
+        err.message)
+      console.error(err)
       setAuctions([])
     } finally {
       setIsLoading(false)
