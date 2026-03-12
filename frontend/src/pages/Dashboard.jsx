@@ -483,9 +483,9 @@ const Dashboard = () => {
           functionName: 'tokenCounter',
         })
 
-      // Normalize to Number — tokenCounter may return
-      // bigint or number depending on RPC response
       const totalTokens = Number(totalTokensRaw)
+      console.log('tokenCounter:', totalTokens)
+      console.log('wallet address:', address)
 
       if (!totalTokens || totalTokens === 0) {
         setWalletNFTs([])
@@ -493,39 +493,50 @@ const Dashboard = () => {
         return
       }
 
-      // MockNFT starts tokenCounter at 0 and
-      // increments before assigning — first token
-      // is ID 1, last is ID totalTokens
       const tokenIds = Array.from(
         { length: totalTokens },
         (_, i) => BigInt(i + 1)
       )
 
-      const ownerResults = await publicClient
-        .multicall({
-          contracts: tokenIds.map(id => ({
+      // Replace multicall with Promise.all —
+      // Somnia does not support multicall3
+      const ownerResults = await Promise.all(
+        tokenIds.map(id =>
+          publicClient.readContract({
             address: MOCK_NFT_ADDRESS,
             abi: MOCK_NFT_ABI,
             functionName: 'ownerOf',
             args: [id],
-          })),
-          allowFailure: true,
-        })
+          }).then(result => ({ 
+            status: 'success', result 
+          })).catch(error => ({ 
+            status: 'failure', error 
+          }))
+        )
+      )
 
-      const uriResults = await publicClient
-        .multicall({
-          contracts: tokenIds.map(id => ({
+      const uriResults = await Promise.all(
+        tokenIds.map(id =>
+          publicClient.readContract({
             address: MOCK_NFT_ADDRESS,
             abi: MOCK_NFT_ABI,
             functionName: 'tokenURI',
             args: [id],
-          })),
-          allowFailure: true,
-        })
+          }).then(result => ({ 
+            status: 'success', result 
+          })).catch(error => ({ 
+            status: 'failure', error 
+          }))
+        )
+      )
 
       const ownedNFTs = []
       for (let i = 0; i < tokenIds.length; i++) {
         const ownerResult = ownerResults[i]
+        console.log(
+          `token ${i + 1} owner:`, 
+          ownerResult.result
+        )
         if (
           ownerResult.status === 'success' &&
           ownerResult.result?.toLowerCase() ===
@@ -546,6 +557,7 @@ const Dashboard = () => {
         }
       }
 
+      console.log('owned NFTs found:', ownedNFTs.length)
       setWalletNFTs(ownedNFTs)
       // Empty wallet is NOT an error —
       // the empty state JSX handles it cleanly
@@ -565,8 +577,6 @@ const Dashboard = () => {
     setIsFetchingBids(true)
     setBidsError(null)
     try {
-      // Read auctionCounter directly — do NOT use
-      // getActiveAuctions() as it misses ended auctions
       const auctionCounter = await publicClient
         .readContract({
           address: AUCTION_HOUSE_ADDRESS,
@@ -574,8 +584,8 @@ const Dashboard = () => {
           functionName: 'auctionCounter',
         })
 
-      // auctionCounter starts at 1 and post-increments
-      // so total auctions = auctionCounter - 1
+      // auctionCounter starts at 1, post-increments
+      // so total = auctionCounter - 1
       // IDs are 1 ... (auctionCounter - 1)
       const totalAuctions = Number(auctionCounter) - 1
       if (totalAuctions <= 0) {
@@ -584,23 +594,28 @@ const Dashboard = () => {
         return
       }
 
-      // Build ALL auction IDs — not just active ones
       const allIds = Array.from(
         { length: totalAuctions },
         (_, i) => BigInt(i + 1)
       )
 
-      // Fetch ALL auctions in one multicall
-      const auctionResults = await publicClient
-        .multicall({
-          contracts: allIds.map(id => ({
+      // Replace multicall with Promise.all of 
+      // individual readContract calls —
+      // Somnia does not support multicall3
+      const auctionResults = await Promise.all(
+        allIds.map(id =>
+          publicClient.readContract({
             address: AUCTION_HOUSE_ADDRESS,
             abi: AUCTION_HOUSE_ABI,
             functionName: 'getAuction',
             args: [id],
-          })),
-          allowFailure: true,
-        })
+          }).then(result => ({ 
+            status: 'success', result 
+          })).catch(error => ({ 
+            status: 'failure', error 
+          }))
+        )
+      )
 
       // Fetch ALL user BidPlaced logs in ONE call
       // before the loop — never inside the loop
@@ -660,8 +675,6 @@ const Dashboard = () => {
             Number(b.blockNumber) - Number(a.blockNumber)
           )
 
-        // Include if user is highest bidder OR 
-        // has bid logs for this auction
         if (!isHighestBidder && history.length === 0) {
           continue
         }
