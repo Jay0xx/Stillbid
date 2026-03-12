@@ -21,9 +21,6 @@ import { formatSTT } from '../utils/format';
 import { Layout, History, Clock, TrendingUp } from 'lucide-react';
 import NFTImage from '../components/NFTImage'
 
-const ALCHEMY_NFT_URL =
-  'https://eth-mainnet.g.alchemy.com/nft/v3/demo/getNFTsForOwner'
-
 // Gas configuration for Somnia Testnet
 const LOW_GAS_CONFIG = {
   maxFeePerGas: undefined,
@@ -215,6 +212,51 @@ const BidAuctionCard = ({ bidData, isExpanded,
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+const AssetCard = ({ nft }) => {
+  const { metadata } = useNFTMetadata(
+    nft.tokenURI || ''
+  )
+  return (
+    <div className="border border-[#E5E7EB] 
+      rounded-lg overflow-hidden 
+      hover:border-[#111111] transition-all 
+      duration-200 bg-white">
+      <div className="h-40 bg-[#F3F4F6] 
+        overflow-hidden">
+        <NFTImage
+          tokenURI={nft.tokenURI || ''}
+          alt={metadata?.name || 'NFT'}
+          className="w-full h-full object-cover"
+          placeholderClassName="w-full h-full 
+            bg-[#F3F4F6] flex items-center 
+            justify-center"
+        />
+      </div>
+      <div className="p-3">
+        <p className="text-sm font-medium 
+          text-[#111111] truncate">
+          {metadata?.name || 
+           `Stillbid #${nft.tokenId}`}
+        </p>
+        <p className="text-xs text-[#6B7280] mt-0.5">
+          Token #{nft.tokenId}
+        </p>
+        {metadata?.description && (
+          <p className="text-xs text-[#9CA3AF] 
+            mt-1 truncate">
+            {metadata.description}
+          </p>
+        )}
+        <span className="inline-block mt-2 
+          text-xs bg-[#111111] text-white 
+          px-2 py-0.5 rounded-full">
+          Stillbid
+        </span>
+      </div>
     </div>
   )
 }
@@ -430,32 +472,92 @@ const Dashboard = () => {
   }
 
   const fetchWalletAssets = async () => {
-    if (!address) return
+    if (!address || !publicClient) return
     setIsFetchingAssets(true)
     setAssetsFetchError(null)
     try {
-      const res = await fetch(
-        `${ALCHEMY_NFT_URL}?owner=${address}` +
-        `&withMetadata=true&pageSize=100`
+      // Step 1: Get total token count from MockNFT
+      const totalTokens = await publicClient.readContract({
+        address: MOCK_NFT_ADDRESS,
+        abi: MOCK_NFT_ABI,
+        functionName: 'tokenCounter',
+      })
+
+      if (!totalTokens || totalTokens === 0n) {
+        setWalletNFTs([])
+        setIsFetchingAssets(false)
+        return
+      }
+
+      // Step 2: Check ownership of all tokens in batches
+      const tokenIds = Array.from(
+        { length: Number(totalTokens) }, 
+        (_, i) => BigInt(i + 1)
       )
-      if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
-      const nfts = (data.ownedNfts || []).map(nft => ({
-        contractAddress: nft.contract.address,
-        tokenId: nft.tokenId,
-        name: nft.name ||
-          `${nft.contract.name || 'NFT'} #${nft.tokenId}`,
-        image: nft.image?.thumbnailUrl ||
-               nft.image?.cachedUrl ||
-               nft.image?.originalUrl || null,
-        collectionName: nft.contract.name ||
-          nft.contract.address.slice(0, 6) + '...',
-        tokenType: nft.tokenType,
-        isStillbid: nft.contract.address.toLowerCase() ===
-          MOCK_NFT_ADDRESS.toLowerCase(),
-      }))
-      setWalletNFTs(nfts.filter(n => n.tokenType === 'ERC721'))
+
+      // Batch read ownerOf for all tokens
+      const ownerResults = await publicClient
+        .multicall({
+          contracts: tokenIds.map(id => ({
+            address: MOCK_NFT_ADDRESS,
+            abi: MOCK_NFT_ABI,
+            functionName: 'ownerOf',
+            args: [id],
+          })),
+          allowFailure: true,
+        })
+
+      // Batch read tokenURI for all tokens
+      const uriResults = await publicClient
+        .multicall({
+          contracts: tokenIds.map(id => ({
+            address: MOCK_NFT_ADDRESS,
+            abi: MOCK_NFT_ABI,
+            functionName: 'tokenURI',
+            args: [id],
+          })),
+          allowFailure: true,
+        })
+
+      // Filter tokens owned by connected wallet
+      const ownedNFTs = []
+      for (let i = 0; i < tokenIds.length; i++) {
+        const ownerResult = ownerResults[i]
+        if (
+          ownerResult.status === 'success' &&
+          ownerResult.result?.toLowerCase() === 
+          address.toLowerCase()
+        ) {
+          const tokenId = tokenIds[i]
+          const tokenURI = uriResults[i].status === 
+            'success' 
+            ? uriResults[i].result 
+            : ''
+          ownedNFTs.push({
+            contractAddress: MOCK_NFT_ADDRESS,
+            tokenId: tokenId.toString(),
+            tokenURI,
+            isStillbid: true,
+            collectionName: 'Stillbid',
+          })
+        }
+      }
+
+      // Also check AuctionHouse contract for NFTs
+      // won from auctions (now owned by wallet)
+      // These are already included above since
+      // safeTransferFrom moves them to winner wallet
+      // so ownerOf will return winner address
+
+      setWalletNFTs(ownedNFTs)
+
+      if (ownedNFTs.length === 0) {
+        setAssetsFetchError(
+          'No Stillbid NFTs found in this wallet.'
+        )
+      }
     } catch (err) {
+      console.error('fetchWalletAssets error:', err)
       setAssetsFetchError(
         'Could not load assets. Please try again.'
       )
@@ -469,113 +571,164 @@ const Dashboard = () => {
     setIsFetchingBids(true)
     setBidsError(null)
     try {
-      // Fetch all BidPlaced logs where bidder = userAddress
-      const logs = await publicClient.getLogs({
-        address: AUCTION_HOUSE_ADDRESS,
-        event: {
-          type: 'event',
-          name: 'BidPlaced',
-          inputs: [
-            { indexed: true, name: 'auctionId', 
-              type: 'uint256' },
-            { indexed: true, name: 'bidder', 
-              type: 'address' },
-            { indexed: false, name: 'amount', 
-              type: 'uint256' },
-          ],
-        },
-        args: { bidder: address },
-        fromBlock: 0n,
-        toBlock: 'latest',
-      })
+      // Step 1: Get all auction IDs ever created
+      // by reading auctionCounter from contract
+      const auctionCounter = await publicClient
+        .readContract({
+          address: AUCTION_HOUSE_ADDRESS,
+          abi: AUCTION_HOUSE_ABI,
+          functionName: 'auctionCounter',
+        })
 
-      if (logs.length === 0) {
+      const totalAuctions = Number(auctionCounter) - 1
+      if (totalAuctions <= 0) {
         setMyBids([])
         setIsFetchingBids(false)
         return
       }
 
-      // Get unique auction IDs from logs
-      const uniqueAuctionIds = [
-        ...new Set(logs.map(l => l.args.auctionId.toString()))
-      ]
+      // Step 2: Fetch all auctions in one multicall
+      const allIds = Array.from(
+        { length: totalAuctions },
+        (_, i) => BigInt(i + 1)
+      )
 
-      // Fetch full auction data for each unique ID
-      const auctionResults = await Promise.all(
-        uniqueAuctionIds.map(id =>
-          publicClient.readContract({
+      const auctionResults = await publicClient
+        .multicall({
+          contracts: allIds.map(id => ({
             address: AUCTION_HOUSE_ADDRESS,
             abi: AUCTION_HOUSE_ABI,
             functionName: 'getAuction',
-            args: [BigInt(id)],
-          }).catch(() => null)
-        )
+            args: [id],
+          })),
+          allowFailure: true,
+        })
+
+      // Step 3: Filter auctions where user is or 
+      // was the highestBidder
+      // Also try recent getLogs for bid history
+      // with limited block range to avoid RPC timeout
+      const myBidAuctions = []
+      
+      for (let i = 0; i < allIds.length; i++) {
+        const result = auctionResults[i]
+        if (result.status !== 'success') continue
+        const auction = result.result
+        const auctionId = allIds[i].toString()
+
+        // Check if user is current highest bidder
+        const isHighestBidder = 
+          auction.highestBidder?.toLowerCase() === 
+          address.toLowerCase()
+
+        // Try to get bid history from recent logs
+        // Use last 50000 blocks to avoid RPC limits
+        let history = []
+        try {
+          const latestBlock = await publicClient
+            .getBlockNumber()
+          const fromBlock = latestBlock > 50000n 
+            ? latestBlock - 50000n 
+            : 0n
+          
+          const logs = await publicClient.getLogs({
+            address: AUCTION_HOUSE_ADDRESS,
+            event: {
+              type: 'event',
+              name: 'BidPlaced',
+              inputs: [
+                { indexed: true, name: 'auctionId',
+                  type: 'uint256' },
+                { indexed: true, name: 'bidder',
+                  type: 'address' },
+                { indexed: false, name: 'amount',
+                  type: 'uint256' },
+              ],
+            },
+            args: { 
+              auctionId: BigInt(auctionId),
+              bidder: address 
+            },
+            fromBlock,
+            toBlock: 'latest',
+          })
+
+          history = logs.map(log => ({
+            amount: log.args.amount,
+            blockNumber: log.blockNumber,
+            txHash: log.transactionHash,
+          })).sort((a, b) => 
+            Number(b.blockNumber) - Number(a.blockNumber)
+          )
+        } catch {
+          // getLogs failed — still show auction
+          // if user is highest bidder
+          history = []
+        }
+
+        // Include auction if:
+        // - user is current highest bidder, OR
+        // - we found bid logs for this user
+        if (!isHighestBidder && history.length === 0) {
+          continue
+        }
+
+        // Determine bid status
+        const isActive = auction.active && 
+          Number(auction.endTime) > 
+          Math.floor(Date.now() / 1000)
+
+        let status = 'Outbid'
+        if (isActive && isHighestBidder) {
+          status = 'Winning'
+        } else if (isActive && !isHighestBidder) {
+          status = 'Outbid'
+        } else if (auction.settled && isHighestBidder) {
+          status = 'Won'
+        } else if (
+          auction.settled && !isHighestBidder &&
+          auction.highestBid > 0n
+        ) {
+          status = 'Lost'
+        } else if (
+          !auction.active && !auction.settled
+        ) {
+          status = 'Expired'
+        }
+
+        // User's highest bid from history or 
+        // fallback to current if they are winner
+        const myHighestBid = history.length > 0
+          ? history.reduce(
+              (max, b) => b.amount > max 
+                ? b.amount : max, 
+              0n
+            )
+          : isHighestBidder 
+            ? auction.highestBid 
+            : 0n
+
+        myBidAuctions.push({
+          auctionId,
+          auction,
+          myHighestBid,
+          history,
+          status,
+          isHighestBidder,
+        })
+      }
+
+      // Sort by auctionId descending (newest first)
+      myBidAuctions.sort((a, b) => 
+        Number(b.auctionId) - Number(a.auctionId)
       )
 
-      // Build bid history per auction from logs
-      const bidsByAuction = {}
-      logs.forEach(log => {
-        const id = log.args.auctionId.toString()
-        if (!bidsByAuction[id]) bidsByAuction[id] = []
-        bidsByAuction[id].push({
-          amount: log.args.amount,
-          blockNumber: log.blockNumber,
-          txHash: log.transactionHash,
-        })
-      })
-
-      // Build final bids array
-      const bidsWithData = uniqueAuctionIds
-        .map((id, i) => {
-          const auction = auctionResults[i]
-          if (!auction) return null
-          const history = bidsByAuction[id] || []
-          // User's highest bid in this auction
-          const myHighestBid = history.reduce(
-            (max, b) => b.amount > max ? b.amount : max,
-            0n
-          )
-          // Determine status
-          const isHighestBidder = 
-            auction.highestBidder?.toLowerCase() === 
-            address.toLowerCase()
-          let status = 'Outbid'
-          if (auction.active && isHighestBidder) {
-            status = 'Winning'
-          } else if (auction.active && !isHighestBidder) {
-            status = 'Outbid'
-          } else if (auction.settled && isHighestBidder) {
-            status = 'Won'
-          } else if (
-            auction.settled && 
-            !isHighestBidder &&
-            auction.highestBid > 0n
-          ) {
-            status = 'Lost'
-          } else if (
-            !auction.active && 
-            !auction.settled
-          ) {
-            status = 'Expired'
-          }
-          return {
-            auctionId: id,
-            auction,
-            myHighestBid,
-            history: history.sort((a, b) => 
-              Number(b.blockNumber) - Number(a.blockNumber)
-            ),
-            status,
-            isHighestBidder,
-          }
-        })
-        .filter(Boolean)
-        .sort((a, b) => Number(b.auctionId) - Number(a.auctionId))
-
-      setMyBids(bidsWithData)
+      setMyBids(myBidAuctions)
     } catch (err) {
-      console.error(err)
-      setBidsError('Could not load bid history.')
+      console.error('fetchMyBids error:', err)
+      setBidsError(
+        'Could not load bid history. Please try again.'
+      )
     } finally {
       setIsFetchingBids(false)
     }
@@ -1223,148 +1376,27 @@ const Dashboard = () => {
 
             {/* Stillbid NFTs section */}
             {!isFetchingAssets &&
-              walletNFTs.filter(n => n.isStillbid).length > 0 && (
+              walletNFTs.length > 0 && (
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-xs font-medium text-[#111111] uppercase tracking-widest">
                     Stillbid
                   </span>
                   <span className="bg-[#111111] text-white text-xs px-2 py-0.5 rounded-full">
-                    {walletNFTs.filter(n => n.isStillbid).length}
+                    {walletNFTs.length}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                   {walletNFTs
-                    .filter(n => n.isStillbid)
                     .filter(n =>
                       assetsSearchQuery === '' ||
-                      n.name.toLowerCase().includes(
-                        assetsSearchQuery.toLowerCase()
-                      )
+                      n.tokenId.includes(assetsSearchQuery)
                     )
                     .map(nft => (
-                      <div
+                      <AssetCard
                         key={`${nft.contractAddress}-${nft.tokenId}`}
-                        className="white border border-[#E5E7EB] rounded-lg overflow-hidden hover:border-[#111111] transition-all duration-200 bg-white"
-                      >
-                        {/* Image */}
-                        <div className="h-40 bg-[#F3F4F6] overflow-hidden">
-                          {nft.image ? (
-                            <img
-                              src={nft.image}
-                              alt={nft.name}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.target.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <svg xmlns="http://www.w3.org/2000/svg"
-                                className="w-8 h-8 text-[#D1D5DB]"
-                                fill="none" viewBox="0 0 24 24"
-                                stroke="currentColor">
-                                <path strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={1}
-                                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        {/* Info */}
-                        <div className="p-3">
-                          <p className="text-sm font-medium text-[#111111] truncate">
-                            {nft.name}
-                          </p>
-                          <p className="text-xs text-[#6B7280] mt-0.5">
-                            Token #{nft.tokenId}
-                          </p>
-                          <span className="inline-block mt-2 text-xs bg-[#111111] text-white px-2 py-0.5 rounded-full">
-                            Stillbid
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  }
-                </div>
-              </div>
-            )}
-
-            {/* Divider between sections */}
-            {!isFetchingAssets &&
-              walletNFTs.filter(n => n.isStillbid).length > 0 &&
-              walletNFTs.filter(n => !n.isStillbid).length > 0 && (
-              <div className="border-t border-[#E5E7EB] mb-8" />
-            )}
-
-            {/* Other NFTs section */}
-            {!isFetchingAssets &&
-              walletNFTs.filter(n => !n.isStillbid).length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-xs font-medium text-[#111111] uppercase tracking-widest">
-                    Other NFTs
-                  </span>
-                  <span className="bg-[#F3F4F6] text-[#111111] text-xs px-2 py-0.5 rounded-full">
-                    {walletNFTs.filter(n => !n.isStillbid).length}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {walletNFTs
-                    .filter(n => !n.isStillbid)
-                    .filter(n =>
-                      assetsSearchQuery === '' ||
-                      n.name.toLowerCase().includes(
-                        assetsSearchQuery.toLowerCase()
-                      ) ||
-                      n.collectionName.toLowerCase().includes(
-                        assetsSearchQuery.toLowerCase()
-                      )
-                    )
-                    .map(nft => (
-                      <div
-                        key={`${nft.contractAddress}-${nft.tokenId}`}
-                        className="border border-[#E5E7EB] rounded-lg overflow-hidden hover:border-[#111111] transition-all duration-200 bg-white"
-                      >
-                        {/* Image */}
-                        <div className="h-40 bg-[#F3F4F6] overflow-hidden">
-                          {nft.image ? (
-                            <img
-                              src={nft.image}
-                              alt={nft.name}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.target.style.display = 'none'
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <svg xmlns="http://www.w3.org/2000/svg"
-                                className="w-8 h-8 text-[#D1D5DB]"
-                                fill="none" viewBox="0 0 24 24"
-                                stroke="currentColor">
-                                <path strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={1}
-                                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          )}
-                        </div>
-                        {/* Info */}
-                        <div className="p-3">
-                          <p className="text-sm font-medium text-[#111111] truncate">
-                            {nft.name}
-                          </p>
-                          <p className="text-xs text-[#6B7280] truncate mt-0.5">
-                            {nft.collectionName}
-                          </p>
-                          <p className="text-xs text-[#6B7280] mt-0.5">
-                            Token #{nft.tokenId}
-                          </p>
-                        </div>
-                      </div>
+                        nft={nft}
+                      />
                     ))
                   }
                 </div>

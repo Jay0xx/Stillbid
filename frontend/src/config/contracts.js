@@ -254,6 +254,16 @@ export const AUCTION_HOUSE_ABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "auctionCounter",
+    "outputs": [
+      { "internalType": "uint256", 
+        "name": "", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   }
 ];
 
