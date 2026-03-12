@@ -132,43 +132,40 @@ const Home = () => {
     if (!publicClient) return
     setIsLoading(true)
     try {
-
-      // getActiveAuctions returns 0x when no auctions
-      // exist — viem throws AbiDecodingZeroDataError.
-      // Treat any failure here as empty list.
-      let activeIds = []
+      // Do NOT use getActiveAuctions() — Somnia RPC
+      // returns 0x for it consistently.
+      // Instead read auctionCounter and scan all IDs.
+      let auctionCounter
       try {
-        const result = await publicClient.readContract({
+        auctionCounter = await publicClient.readContract({
           address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
           abi: AUCTION_HOUSE_ABI,
-          functionName: 'getActiveAuctions',
+          functionName: 'auctionCounter',
         })
-        activeIds = result || []
-      } catch (err) {
-        // 0x response = no auctions yet, not an error
-        const isEmpty = 
-          err?.message?.includes('zero data') ||
-          err?.message?.includes('0x') ||
-          err?.name === 'AbiDecodingZeroDataError'
-        if (isEmpty) {
-          setAuctions([])
-          setIsLoading(false)
-          return
-        }
-        // Unexpected error — rethrow
-        throw err
-      }
-
-      if (!activeIds || activeIds.length === 0) {
+      } catch {
         setAuctions([])
         setIsLoading(false)
         return
       }
 
-      // Fetch each auction individually —
+      // auctionCounter starts at 1 and post-increments
+      // so total auctions = auctionCounter - 1
+      const total = Number(auctionCounter) - 1
+      if (total <= 0) {
+        setAuctions([])
+        setIsLoading(false)
+        return
+      }
+
+      const allIds = Array.from(
+        { length: total },
+        (_, i) => BigInt(i + 1)
+      )
+
+      // Fetch all auctions individually —
       // Somnia does not support multicall3
       const auctionResults = await Promise.all(
-        activeIds.map(id =>
+        allIds.map(id =>
           publicClient.readContract({
             address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
             abi: AUCTION_HOUSE_ABI,
@@ -182,9 +179,15 @@ const Home = () => {
         )
       )
 
+      const now = Math.floor(Date.now() / 1000)
+
+      // Filter for active auctions only in JS
       const validAuctions = auctionResults
-        .filter(r => r.status === 'success' && 
-          r.result.active)
+        .filter(r =>
+          r.status === 'success' &&
+          r.result.active &&
+          Number(r.result.endTime) > now
+        )
         .map(r => r.result)
 
       if (validAuctions.length === 0) {

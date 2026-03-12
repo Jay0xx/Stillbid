@@ -289,66 +289,94 @@ const Dashboard = () => {
   const [isFetchingBids, setIsFetchingBids] = useState(false)
   const [bidsError, setBidsError] = useState(null)
   const [expandedBidId, setExpandedBidId] = useState(null)
+  const [myAuctionsLoading, setMyAuctionsLoading] = useState(false)
+  const [myAuctionsList, setMyAuctionsList] = useState([])
 
   useEffect(() => {
     document.title = "Stillbid — Dashboard";
   }, []);
 
-  // In a real app, we'd use an indexer. Here we'll scan all active auctions 
-  // and filter by the connected user's address.
-  const { data: allActiveIds, refetch } = useReadContracts({
-    contracts: [{
-      address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-      abi: AUCTION_HOUSE_ABI,
-      functionName: 'getActiveAuctions',
-    }]
-  });
+  // fetchMyAuctions: scan auctionCounter instead of
+  // getActiveAuctions (which returns 0x on Somnia)
+  const fetchMyAuctions = async () => {
+    if (!address || !publicClient) return
+    setMyAuctionsLoading(true)
+    try {
+      let auctionCounter
+      try {
+        auctionCounter = await publicClient.readContract({
+          address: AUCTION_HOUSE_ADDRESS,
+          abi: AUCTION_HOUSE_ABI,
+          functionName: 'auctionCounter',
+        })
+      } catch {
+        setMyAuctionsList([])
+        setMyAuctionsLoading(false)
+        return
+      }
 
-  const auctionIds = allActiveIds?.[0]?.result || [];
+      const total = Number(auctionCounter) - 1
+      if (total <= 0) {
+        setMyAuctionsList([])
+        setMyAuctionsLoading(false)
+        return
+      }
 
-  const { data: auctionsData, isLoading } = useReadContracts({
-    contracts: auctionIds.map(id => ({
-      address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-      abi: AUCTION_HOUSE_ABI,
-      functionName: 'getAuction',
-      args: [id],
-    }))
-  });
+      const allIds = Array.from(
+        { length: total },
+        (_, i) => BigInt(i + 1)
+      )
 
-  const myAuctions = useMemo(() => {
-    if (!auctionsData || !address) return [];
-    return auctionsData
-      .filter(res => res.status === 'success')
-      .map(res => res.result)
-      .filter(a => a.seller.toLowerCase() === address.toLowerCase());
-  }, [auctionsData, address]);
+      const auctionResults = await Promise.all(
+        allIds.map(id =>
+          publicClient.readContract({
+            address: AUCTION_HOUSE_ADDRESS,
+            abi: AUCTION_HOUSE_ABI,
+            functionName: 'getAuction',
+            args: [id],
+          }).then(result => ({ 
+            status: 'success', result 
+          })).catch(() => ({ 
+            status: 'failure' 
+          }))
+        )
+      )
 
-  const { data: uriData } = useReadContracts({
-    contracts: myAuctions.map(a => ({
-      address: a.nftContract,
-      abi: MOCK_NFT_ABI,
-      functionName: 'tokenURI',
-      args: [a.tokenId],
-    }))
-  });
+      const sellerAuctions = auctionResults
+        .filter(r =>
+          r.status === 'success' &&
+          r.result.seller?.toLowerCase() === 
+            address.toLowerCase()
+        )
+        .map(r => r.result)
 
-  const dashboardTokenURIs = useReadContracts({
-    contracts: (myAuctions || []).map(auction => ({
-      address: auction.nftContract,
-      abi: MOCK_NFT_ABI,
-      functionName: 'tokenURI',
-      args: [auction.tokenId],
-    })),
-    query: { enabled: (myAuctions || []).length > 0 }
-  })
+      // Fetch tokenURIs for seller auctions
+      const uriResults = await Promise.all(
+        sellerAuctions.map(a =>
+          publicClient.readContract({
+            address: a.nftContract,
+            abi: MOCK_NFT_ABI,
+            functionName: 'tokenURI',
+            args: [a.tokenId],
+          }).then(result => result).catch(() => '')
+        )
+      )
 
-  const myAuctionsWithImages = (myAuctions || []).map(
-    (auction, i) => ({
-      ...auction,
-      resolvedTokenURI: 
-        dashboardTokenURIs.data?.[i]?.result || ''
-    })
-  )
+      const auctionsWithImages = sellerAuctions.map(
+        (a, i) => ({
+          ...a,
+          resolvedTokenURI: uriResults[i] || '',
+        })
+      )
+
+      setMyAuctionsList(auctionsWithImages)
+    } catch (err) {
+      console.error('fetchMyAuctions error:', err)
+      setMyAuctionsList([])
+    } finally {
+      setMyAuctionsLoading(false)
+    }
+  }
 
   const { data: watchedAuctionsData, 
           isLoading: isLoadingWatched,
@@ -436,7 +464,7 @@ const Dashboard = () => {
       setShowRemoveConfirm(null)
       setRemovingAuctionId(null)
       // Refresh auctions list
-      refetch()
+      fetchMyAuctions()
     } catch (err) {
       setRemoveError(
         err?.shortMessage || 'Transaction failed.'
@@ -741,6 +769,12 @@ const Dashboard = () => {
   }
 
   useEffect(() => {
+    if (activeTab === 'auctions' && address) {
+      fetchMyAuctions()
+    }
+  }, [activeTab, address])
+
+  useEffect(() => {
     if (activeTab === 'assets' && address) {
       fetchWalletAssets()
     }
@@ -790,7 +824,7 @@ const Dashboard = () => {
               <Clock size={16} />
               <span className="text-xs font-bold uppercase tracking-widest text-opacity-80">Active Listings</span>
             </div>
-            <p className="text-4xl font-black text-[#111111]">{myAuctions.length}</p>
+            <p className="text-4xl font-black text-[#111111]">{myAuctionsList.length}</p>
           </div>
           <div className="bg-white border border-[#E5E7EB] p-6 rounded-lg shadow-sm">
             <div className="flex items-center gap-3 text-[#6B7280] mb-4">
@@ -798,7 +832,7 @@ const Dashboard = () => {
               <span className="text-xs font-bold uppercase tracking-widest text-opacity-80">Total Value</span>
             </div>
             <p className="text-4xl font-black text-[#111111]">
-              {myAuctions.reduce((acc, a) => acc + parseFloat(formatEther(a.highestBid || 0n)), 0).toFixed(2)} <span className="text-lg font-medium">STT</span>
+              {myAuctionsList.reduce((acc, a) => acc + parseFloat(formatEther(a.highestBid || 0n)), 0).toFixed(2)} <span className="text-lg font-medium">STT</span>
             </p>
           </div>
           <div className="bg-white border border-[#E5E7EB] p-6 rounded-lg shadow-sm">
@@ -807,7 +841,7 @@ const Dashboard = () => {
               <span className="text-xs font-bold uppercase tracking-widest text-opacity-80">Avg. Bid</span>
             </div>
             <p className="text-4xl font-black text-[#111111]">
-              {myAuctions.length > 0 ? (myAuctions.reduce((acc, a) => acc + parseFloat(formatEther(a.highestBid || 0n)), 0) / myAuctions.length).toFixed(2) : '0.00'} <span className="text-lg font-medium">STT</span>
+              {myAuctionsList.length > 0 ? (myAuctionsList.reduce((acc, a) => acc + parseFloat(formatEther(a.highestBid || 0n)), 0) / myAuctionsList.length).toFixed(2) : '0.00'} <span className="text-lg font-medium">STT</span>
             </p>
           </div>
         </div>
@@ -851,13 +885,13 @@ const Dashboard = () => {
             <h2 className="text-xs font-black uppercase tracking-[0.2em] text-[#6B7280] mb-6 mb-2">My Live Auctions</h2>
             <div className="h-[1px] bg-[#E5E7EB] mb-8" />
 
-            {isLoading ? (
+            {myAuctionsLoading ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[1, 2, 3].map(i => <div key={i} className="h-64 bg-gray-100 animate-pulse rounded-lg" />)}
               </div>
-            ) : myAuctions.length > 0 ? (
+            ) : myAuctionsList.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {myAuctionsWithImages.map((a) => (
+                {myAuctionsList.map((a) => (
                   <div 
                     key={a.auctionId.toString()} 
                     className="bg-white border border-[#E5E7EB] rounded-lg overflow-hidden hover:border-[#111111] transition-all cursor-pointer group shadow-sm flex flex-col"
