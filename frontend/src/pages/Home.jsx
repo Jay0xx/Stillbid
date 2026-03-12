@@ -1,47 +1,44 @@
 // src/pages/Home.jsx
-import React, { useState, useEffect, useMemo } from 'react';
-import useNFTMetadata from '../hooks/useNFTMetadata'
-import WatchButton from '../components/WatchButton'
-
-import { useNavigate } from 'react-router-dom';
-import { useReadContract, useReadContracts, usePublicClient } from 'wagmi';
-import { useQueryClient } from '@tanstack/react-query'
-import { formatEther } from 'viem';
-import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts';
-import { LayoutGrid, Clock, Tag, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useReadContract, useReadContracts, useConfig } from 'wagmi'
+import { formatEther } from 'viem'
+import { CONTRACT_ADDRESSES, AUCTION_HOUSE_ABI, MOCK_NFT_ABI } from '../config/contracts'
+import { Clock, Tag } from 'lucide-react'
 import NFTImage from '../components/NFTImage'
+import WatchButton from '../components/WatchButton'
+import useNFTMetadata from '../hooks/useNFTMetadata'
 
 const AuctionCard = ({ auction, navigate }) => {
   const { metadata } = useNFTMetadata(
     auction.resolvedTokenURI || ''
   )
-  const [timeLeft, setTimeLeft] = useState('');
-
-  const [isEndingSoon, setIsEndingSoon] = useState(false);
+  const [timeLeft, setTimeLeft] = useState('')
+  const [isEndingSoon, setIsEndingSoon] = useState(false)
 
   useEffect(() => {
     const updateTimer = () => {
-      const now = Math.floor(Date.now() / 1000);
-      const remaining = Number(auction.endTime) - now;
+      const now = Math.floor(Date.now() / 1000)
+      const remaining = Number(auction.endTime) - now
 
       if (remaining <= 0) {
-        setTimeLeft('Ending...');
-        setIsEndingSoon(true);
-        return;
+        setTimeLeft('Ending...')
+        setIsEndingSoon(true)
+        return
       }
 
-      const h = Math.floor(remaining / 3600);
-      const m = Math.floor((remaining % 3600) / 60);
-      const s = remaining % 60;
+      const h = Math.floor(remaining / 3600)
+      const m = Math.floor((remaining % 3600) / 60)
+      const s = remaining % 60
       
-      setTimeLeft(`${h.toString().padStart(2, '0')}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`);
-      setIsEndingSoon(remaining < 3600);
-    };
+      setTimeLeft(`${h.toString().padStart(2, '0')}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`)
+      setIsEndingSoon(remaining < 3600)
+    }
 
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [auction.endTime]);
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+    return () => clearInterval(interval)
+  }, [auction.endTime])
 
   return (
     <div 
@@ -51,32 +48,31 @@ const AuctionCard = ({ auction, navigate }) => {
       <div className="h-[220px] bg-[#F3F4F6] flex items-center justify-center relative">
         <NFTImage
           tokenURI={auction.resolvedTokenURI || ''}
-          alt={auction.nftName || 'NFT'}
+          alt={metadata?.name || 'NFT'}
           className="w-full h-full object-cover"
-          placeholderClassName="w-full h-full bg-[#F3F4F6] 
-            flex items-center justify-center"
+          placeholderClassName="w-full h-full bg-[#F3F4F6] flex items-center justify-center"
         />
-      <div className="absolute top-2 right-2 z-10">
-        <WatchButton
-          auctionId={auction.auctionId}
-          currentPrice={auction.highestBid}
-          size="sm"
-        />
-      </div>
-      <div className="absolute bottom-3 left-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
-        Token #{auction.tokenId.toString()}
-      </div>
+        <div className="absolute top-2 right-2 z-10">
+          <WatchButton
+            auctionId={auction.auctionId}
+            currentPrice={auction.highestBid}
+            size="sm"
+          />
+        </div>
+        <div className="absolute bottom-3 left-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
+          Token #{auction.tokenId.toString()}
+        </div>
       </div>
       
       <div className="p-4">
         <h3 className="font-semibold text-[#111111] text-base truncate group-hover:text-[#111111]">
-          {metadata?.name || auction.nftName || 'Unnamed NFT'}
+          {metadata?.name || 'Unnamed NFT'}
         </h3>
         
         <div className="mt-2">
           <p className="text-[#6B7280] text-xs uppercase tracking-wide">Current Bid</p>
           <p className="font-bold text-[#111111] text-lg">
-            {auction.highestBid > 0 ? formatEther(auction.highestBid) : formatEther(auction.reservePrice)} STT
+            {auction.highestBid > 0n ? formatEther(auction.highestBid) : formatEther(auction.reservePrice)} STT
           </p>
         </div>
 
@@ -90,13 +86,13 @@ const AuctionCard = ({ auction, navigate }) => {
           </div>
         </div>
 
-        <button className="w-full mt-4 bg-[#111111] text-white text-sm font-medium py-2 rounded-md hover:bg-[#333333] transition-colors">
+        <button className="w-full mt-4 border border-[#111111] bg-white text-[#111111] text-sm font-medium py-2 rounded-md hover:bg-[#111111] hover:text-white transition-all">
           Place Bid
         </button>
       </div>
     </div>
-  );
-};
+  )
+}
 
 const SkeletonCard = () => (
   <div className="bg-white border border-[#E5E7EB] rounded-[8px] overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.06)] animate-pulse">
@@ -114,173 +110,98 @@ const SkeletonCard = () => (
       <div className="h-9 bg-[#F3F4F6] rounded w-full mt-4" />
     </div>
   </div>
-);
+)
 
 const Home = () => {
-  const navigate = useNavigate();
-  const [filter, setFilter] = useState('All');
+  const navigate = useNavigate()
+  const wagmiConfig = useConfig()
+  const [filter, setFilter] = useState('All')
 
   useEffect(() => {
-    document.title = "Stillbid — Live Auctions";
-  }, []);
+    document.title = "Stillbid — Live Auctions"
+  }, [])
 
-  const publicClient = usePublicClient()
-  const [auctions, setAuctions] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
+  // Step 1: Read auctionCounter
+  const { data: auctionCounter } = useReadContract({
+    address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
+    abi: AUCTION_HOUSE_ABI,
+    functionName: 'auctionCounter',
+    config: wagmiConfig,
+    query: { refetchInterval: 15000 }
+  })
 
-  const readWithRetry = async (params, retries = 3) => {
-    for (let attempt = 0; attempt < retries; attempt++) {
-      try {
-        const result = await publicClient.readContract(
-          params
-        )
-        // If result is undefined/null on non-last 
-        // attempt, retry
-        if (result === undefined && 
-            attempt < retries - 1) {
-          await new Promise(r => setTimeout(r, 1000))
-          continue
-        }
-        return result
-      } catch (err) {
-        const isZeroData = 
-          err?.message?.includes('zero data') ||
-          err?.message?.includes('0x') ||
-          err?.name === 'AbiDecodingZeroDataError' ||
-          err?.name === 'ContractFunctionExecutionError'
-        
-        if (isZeroData && attempt < retries - 1) {
-          // Wait longer each retry
-          await new Promise(r => 
-            setTimeout(r, 1000 * (attempt + 1))
-          )
-          continue
-        }
-        throw err
-      }
+  // Step 2: Build contracts array for all auction IDs
+  const total = auctionCounter ? Number(auctionCounter) - 1 : 0
+  const auctionIds = useMemo(() => 
+    Array.from({ length: total }, (_, i) => BigInt(i + 1)), 
+    [total]
+  )
+
+  const { data: auctionsData } = useReadContracts({
+    contracts: auctionIds.map(id => ({
+      address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
+      abi: AUCTION_HOUSE_ABI,
+      functionName: 'getAuction',
+      args: [id],
+    })),
+    config: wagmiConfig,
+    query: { 
+      enabled: total > 0,
+      refetchInterval: 15000
     }
-  }
+  })
 
-  const fetchAuctions = async () => {
-    if (!publicClient) return
-    setIsLoading(true)
-    try {
-      // Use retry wrapper for all Somnia RPC calls
-      let auctionCounter
-      try {
-        auctionCounter = await readWithRetry({
-          address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-          abi: AUCTION_HOUSE_ABI,
-          functionName: 'auctionCounter',
-        })
-      } catch (err) {
-        console.error('auctionCounter failed:', 
-          err.message)
-        setAuctions([])
-        setIsLoading(false)
-        return
-      }
-
-      const total = Number(auctionCounter) - 1
-      console.log('auctionCounter:', 
-        Number(auctionCounter), 'total:', total)
-
-      if (total <= 0) {
-        setAuctions([])
-        setIsLoading(false)
-        return
-      }
-
-      const allIds = Array.from(
-        { length: total },
-        (_, i) => BigInt(i + 1)
+  // Step 3: Filter active auctions in JS
+  const now = Math.floor(Date.now() / 1000)
+  const activeAuctions = useMemo(() => {
+    if (!auctionsData) return []
+    return auctionsData
+      .map(r => r?.result)
+      .filter(a => 
+        a && 
+        a.active === true && 
+        Number(a.endTime) > now
       )
+  }, [auctionsData, now])
 
-      const auctionResults = await Promise.all(
-        allIds.map(id =>
-          readWithRetry({
-            address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-            abi: AUCTION_HOUSE_ABI,
-            functionName: 'getAuction',
-            args: [id],
-          }).then(result => ({ 
-            status: 'success', result 
-          })).catch(err => {
-            console.error(`getAuction(${id}) failed:`,
-              err.message)
-            return { status: 'failure' }
-          })
-        )
-      )
+  // Step 4: Fetch tokenURIs for active auctions
+  const { data: tokenURIData } = useReadContracts({
+    contracts: activeAuctions.map(a => ({
+      address: a.nftContract,
+      abi: MOCK_NFT_ABI,
+      functionName: 'tokenURI',
+      args: [a.tokenId],
+    })),
+    config: wagmiConfig,
+    query: { enabled: activeAuctions.length > 0 }
+  })
 
-      const now = Math.floor(Date.now() / 1000)
-
-      const validAuctions = auctionResults
-        .filter(r =>
-          r.status === 'success' &&
-          r.result.active &&
-          Number(r.result.endTime) > now
-        )
-        .map(r => r.result)
-
-      console.log('validAuctions:', validAuctions.length)
-
-      if (validAuctions.length === 0) {
-        setAuctions([])
-        setIsLoading(false)
-        return
-      }
-
-      const uriResults = await Promise.all(
-        validAuctions.map(a =>
-          readWithRetry({
-            address: a.nftContract,
-            abi: MOCK_NFT_ABI,
-            functionName: 'tokenURI',
-            args: [a.tokenId],
-          }).then(result => result).catch(() => '')
-        )
-      )
-
-      const auctionsWithImages = validAuctions.map(
-        (a, i) => ({
-          ...a,
-          resolvedTokenURI: uriResults[i] || '',
-        })
-      )
-
-      setAuctions(auctionsWithImages)
-
-    } catch (err) {
-      console.error('fetchAuctions error:', err.message)
-      setAuctions([])
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Fetch on mount and poll every 15 seconds
-  useEffect(() => {
-    fetchAuctions()
-    const interval = setInterval(fetchAuctions, 15000)
-    return () => clearInterval(interval)
-  }, [publicClient])
+  // Step 5: Merge
+  const auctionsWithImages = useMemo(() => {
+    return activeAuctions.map((a, i) => ({
+      ...a,
+      resolvedTokenURI: tokenURIData?.[i]?.result || ''
+    }))
+  }, [activeAuctions, tokenURIData])
 
   const filteredAuctions = useMemo(() => {
-    const now = Math.floor(Date.now() / 1000);
-    let result = [...auctions];
+    let result = [...auctionsWithImages]
 
     if (filter === 'Ending Soon') {
       result = result
         .filter(a => Number(a.endTime) - now < 3600 && Number(a.endTime) - now > 0)
-        .sort((a, b) => Number(a.endTime) - Number(b.endTime));
+        .sort((a, b) => Number(a.endTime) - Number(b.endTime))
     } else if (filter === 'New') {
       result = result
-        .sort((a, b) => Number(b.startTime) - Number(a.startTime));
+        .sort((a, b) => Number(b.startTime) - Number(a.startTime))
     }
 
-    return result;
-  }, [auctions, filter]);
+    return result
+  }, [auctionsWithImages, filter, now])
+
+  const isLoading = 
+    auctionCounter === undefined || 
+    (total > 0 && auctionsData === undefined)
 
   return (
     <div className="min-h-screen bg-[#FAFAFA]">
@@ -327,7 +248,11 @@ const Home = () => {
         ) : filteredAuctions.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredAuctions.map((auction) => (
-              <AuctionCard key={auction.auctionId.toString()} auction={auction} navigate={navigate} />
+              <AuctionCard 
+                key={auction.auctionId.toString()} 
+                auction={auction} 
+                navigate={navigate} 
+              />
             ))}
           </div>
         ) : (
@@ -344,7 +269,7 @@ const Home = () => {
         )}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Home;
+export default Home
