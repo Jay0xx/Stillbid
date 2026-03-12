@@ -132,12 +132,32 @@ const Home = () => {
     if (!publicClient) return
     setIsLoading(true)
     try {
-      // Step 1: get all active auction IDs
-      const activeIds = await publicClient.readContract({
-        address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
-        abi: AUCTION_HOUSE_ABI,
-        functionName: 'getActiveAuctions',
-      })
+
+      // getActiveAuctions returns 0x when no auctions
+      // exist — viem throws AbiDecodingZeroDataError.
+      // Treat any failure here as empty list.
+      let activeIds = []
+      try {
+        const result = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.AUCTION_HOUSE,
+          abi: AUCTION_HOUSE_ABI,
+          functionName: 'getActiveAuctions',
+        })
+        activeIds = result || []
+      } catch (err) {
+        // 0x response = no auctions yet, not an error
+        const isEmpty = 
+          err?.message?.includes('zero data') ||
+          err?.message?.includes('0x') ||
+          err?.name === 'AbiDecodingZeroDataError'
+        if (isEmpty) {
+          setAuctions([])
+          setIsLoading(false)
+          return
+        }
+        // Unexpected error — rethrow
+        throw err
+      }
 
       if (!activeIds || activeIds.length === 0) {
         setAuctions([])
@@ -145,9 +165,8 @@ const Home = () => {
         return
       }
 
-      // Step 2: fetch each auction individually
-      // Somnia does not support multicall3 so we
-      // use Promise.all of individual readContract calls
+      // Fetch each auction individually —
+      // Somnia does not support multicall3
       const auctionResults = await Promise.all(
         activeIds.map(id =>
           publicClient.readContract({
@@ -168,7 +187,13 @@ const Home = () => {
           r.result.active)
         .map(r => r.result)
 
-      // Step 3: fetch tokenURIs individually
+      if (validAuctions.length === 0) {
+        setAuctions([])
+        setIsLoading(false)
+        return
+      }
+
+      // Fetch tokenURIs individually
       const uriResults = await Promise.all(
         validAuctions.map(a =>
           publicClient.readContract({
@@ -188,6 +213,7 @@ const Home = () => {
       )
 
       setAuctions(auctionsWithImages)
+
     } catch (err) {
       console.error('fetchAuctions error:', err)
       setAuctions([])
