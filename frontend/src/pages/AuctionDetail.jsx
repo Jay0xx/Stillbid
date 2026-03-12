@@ -1,6 +1,7 @@
 // src/pages/AuctionDetail.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import useNFTMetadata from '../hooks/useNFTMetadata'
+import WatchButton from '../components/WatchButton'
 
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAccount, useReadContract, useWriteContract, usePublicClient, useWatchContractEvent } from 'wagmi';
@@ -277,7 +278,16 @@ const AuctionDetail = () => {
               <span className="text-[#6B7280] text-xs font-medium">#{auctionId}</span>
             </div>
 
-            <h1 className="text-4xl font-black text-[#111111] mb-2 tracking-tight">{nftMetadata?.name || auction?.nftName || 'Unnamed NFT'}</h1>
+            <div className="flex items-center gap-3 mt-1">
+              <h1 className="text-4xl font-black text-[#111111] mb-2 tracking-tight">
+                {nftMetadata?.name || auction?.nftName || 'Unnamed NFT'}
+              </h1>
+              <WatchButton
+                auctionId={auctionId}
+                currentPrice={auction?.highestBid}
+                size="md"
+              />
+            </div>
             <p className="text-[#6B7280] text-lg mb-4 lowercase tracking-tight">{nftMetadata?.description || 'This NFT is listed on the Somnia Auction House.'}</p>
             <p className="text-[#6B7280] text-lg mb-8 lowercase tracking-tight">listed by <span className="font-bold text-[#111111] border-b border-[#111111]/20 pb-0.5">{auction.seller.slice(0, 6)}...{auction.seller.slice(-4)}</span></p>
 

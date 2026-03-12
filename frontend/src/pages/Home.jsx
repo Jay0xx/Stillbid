@@ -1,6 +1,7 @@
 // src/pages/Home.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import useNFTMetadata from '../hooks/useNFTMetadata'
+import WatchButton from '../components/WatchButton'
 
 import { useNavigate } from 'react-router-dom';
 import { useReadContract, useReadContracts } from 'wagmi';
@@ -54,6 +55,13 @@ const AuctionCard = ({ auction, navigate }) => {
           placeholderClassName="w-full h-full bg-[#F3F4F6] 
             flex items-center justify-center"
         />
+        <div className="absolute top-2 right-2">
+          <WatchButton
+            auctionId={auction.auctionId}
+            currentPrice={auction.highestBid}
+            size="sm"
+          />
+        </div>
         <div className="absolute top-3 right-3 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md text-[10px] font-bold text-[#111111] uppercase tracking-wider">
           Token #{auction.tokenId.toString()}
         </div>
@@ -219,8 +227,8 @@ const Home = () => {
               onClick={() => setFilter(f)}
               className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all border ${
                 filter === f 
-                  ? 'bg-[#111111] text-white border-[#111111]' 
-                  : 'bg-white text-[#6B7280] border-[#E5E7EB] hover:border-[#111111]'
+                ? 'bg-[#111111] text-white border-[#111111]' 
+                : 'bg-white text-[#6B7280] border-[#E5E7EB] hover:border-[#111111]'
               }`}
             >
               {f}

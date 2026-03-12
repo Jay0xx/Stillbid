@@ -4,6 +4,8 @@ import { useAccount, useReadContracts, useWriteContract } from 'wagmi';
 import { usePublicClient } from 'wagmi'
 import { formatAddress } from '../utils/format'
 import useNFTMetadata from '../hooks/useNFTMetadata'
+import useWatchlist from '../hooks/useWatchlist'
+import WatchButton from '../components/WatchButton'
 import { useNavigate } from 'react-router-dom';
 import { formatEther } from 'viem';
 import { waitForTransactionReceipt } from 'wagmi/actions';
@@ -222,6 +224,11 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient()
+  const { 
+    watchlist, 
+    removeFromWatchlist,
+    watchCount 
+  } = useWatchlist()
 
   const [activeTab, setActiveTab] = useState('auctions')
   const [walletNFTs, setWalletNFTs] = useState([])
@@ -298,6 +305,59 @@ const Dashboard = () => {
       ...auction,
       resolvedTokenURI: 
         dashboardTokenURIs.data?.[i]?.result || ''
+    })
+  )
+
+  const { data: watchedAuctionsData, 
+          isLoading: isLoadingWatched,
+          refetch: refetchWatched } = useReadContracts({
+    contracts: watchlist.map(w => ({
+      address: AUCTION_HOUSE_ADDRESS,
+      abi: AUCTION_HOUSE_ABI,
+      functionName: 'getAuction',
+      args: [BigInt(w.id)],
+    })),
+    query: { enabled: watchlist.length > 0 }
+  })
+
+  const watchedAuctions = useMemo(() => {
+    if (!watchedAuctionsData) return []
+    return watchedAuctionsData
+      .map((res, i) => {
+        if (res.status !== 'success') return null
+        const entry = watchlist[i]
+        const auction = res.result
+        const priceAtWatch = BigInt(
+          entry?.priceAtWatch || '0'
+        )
+        const currentPrice = auction.highestBid || 0n
+        const priceChange = currentPrice - priceAtWatch
+        return {
+          ...auction,
+          watchEntry: entry,
+          priceAtWatch,
+          priceChange,
+          priceIncreased: priceChange > 0n,
+        }
+      })
+      .filter(Boolean)
+  }, [watchedAuctionsData, watchlist])
+
+  const watchedTokenURIs = useReadContracts({
+    contracts: watchedAuctions.map(a => ({
+      address: a.nftContract,
+      abi: MOCK_NFT_ABI,
+      functionName: 'tokenURI',
+      args: [a.tokenId],
+    })),
+    query: { enabled: watchedAuctions.length > 0 }
+  })
+
+  const watchedWithImages = watchedAuctions.map(
+    (auction, i) => ({
+      ...auction,
+      resolvedTokenURI: 
+        watchedTokenURIs.data?.[i]?.result || ''
     })
   )
 
@@ -611,7 +671,12 @@ const Dashboard = () => {
             onClick={() => setActiveTab('watching')}
             className={`px-4 py-3 text-sm cursor-pointer ${activeTab === 'watching' ? 'border-b-2 border-[#111111] text-[#111111] font-medium -mb-px' : 'text-[#6B7280] hover:text-[#111111]'}`}
           >
-            Watching
+            Watching {watchCount > 0 && (
+              <span className="ml-1.5 bg-[#111111] text-white 
+                text-[10px] px-1.5 py-0.5 rounded-full">
+                {watchCount}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab('assets')}
@@ -867,10 +932,258 @@ const Dashboard = () => {
 
         {/* Watching Tab */}
         {activeTab === 'watching' && (
-          <div className="bg-white border border-[#E5E7EB] rounded-xl py-24 text-center">
-            <Layout size={40} className="mx-auto text-[#E5E7EB] mb-4" />
-            <p className="text-[#6B7280] font-medium">You're not watching any auctions.</p>
-            <p className="text-xs text-[#9CA3AF] mt-1">Auctions you watch will appear here.</p>
+          <div>
+
+            {/* Header */}
+            <div className="flex items-center 
+              justify-between mb-6">
+              <div>
+                <h2 className="text-xs font-black uppercase 
+                  tracking-[0.2em] text-[#6B7280]">
+                  Watching
+                </h2>
+                <div className="h-[1px] bg-[#E5E7EB] mt-2" />
+              </div>
+              <button
+                onClick={refetchWatched}
+                disabled={isLoadingWatched}
+                className="text-xs text-[#6B7280] 
+                  hover:text-[#111111] border border-[#E5E7EB] 
+                  rounded-md px-3 py-1.5
+                  disabled:cursor-not-allowed transition-colors"
+              >
+                {isLoadingWatched ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+
+            {/* Loading skeleton */}
+            {isLoadingWatched && watchlist.length > 0 && (
+              <div className="grid grid-cols-1 
+                sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {watchlist.map((_, i) => (
+                  <div key={i}
+                    className="bg-white border border-[#E5E7EB] 
+                      rounded-lg overflow-hidden animate-pulse">
+                    <div className="h-40 bg-[#F3F4F6]" />
+                    <div className="p-4 space-y-2">
+                      <div className="h-4 bg-[#F3F4F6] 
+                        rounded w-3/4" />
+                      <div className="h-3 bg-[#F3F4F6] 
+                        rounded w-1/2" />
+                      <div className="h-3 bg-[#F3F4F6] 
+                        rounded w-1/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Watched auctions grid */}
+            {!isLoadingWatched && 
+              watchedWithImages.length > 0 && (
+              <div className="grid grid-cols-1 
+                sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {watchedWithImages.map((auction) => {
+                  const auctionId = 
+                    auction.auctionId?.toString()
+                  const secondsLeft = Math.max(0, 
+                    Number(auction.endTime) - 
+                    Math.floor(Date.now() / 1000)
+                  )
+                  const hours = Math.floor(
+                    secondsLeft / 3600
+                  )
+                  const mins = Math.floor(
+                    (secondsLeft % 3600) / 60
+                  )
+                  const secs = secondsLeft % 60
+                  const timeStr = secondsLeft === 0 
+                    ? 'Ended' 
+                    : `${String(hours).padStart(2,'0')}h ${String(mins).padStart(2,'0')}m ${String(secs).padStart(2,'0')}s`
+
+                  return (
+                    <div
+                      key={auctionId}
+                      className="bg-white border 
+                        border-[#E5E7EB] rounded-lg 
+                        overflow-hidden hover:border-[#111111] 
+                        transition-all duration-200 
+                        flex flex-col"
+                    >
+                      {/* Image */}
+                      <div className="relative h-40 
+                        bg-[#F3F4F6] overflow-hidden">
+                        <NFTImage
+                          tokenURI={
+                            auction.resolvedTokenURI || ''
+                          }
+                          alt="NFT"
+                          className="w-full h-full 
+                            object-cover"
+                          placeholderClassName="w-full 
+                            h-full bg-[#F3F4F6] flex 
+                            items-center justify-center"
+                        />
+                        {/* Remove from watchlist */}
+                        <div className="absolute top-2 
+                          right-2">
+                          <WatchButton
+                            auctionId={auctionId}
+                            currentPrice={
+                              auction.highestBid
+                            }
+                            size="sm"
+                          />
+                        </div>
+                        {/* Auction status badge */}
+                        <div className="absolute top-2 
+                          left-2">
+                          {auction.active ? (
+                            <span className="bg-green-500 
+                              text-white text-[9px] 
+                              font-bold px-2 py-0.5 
+                              rounded uppercase tracking-wide">
+                              Live
+                            </span>
+                          ) : (
+                            <span className="bg-[#6B7280] 
+                              text-white text-[9px] 
+                              font-bold px-2 py-0.5 
+                              rounded uppercase tracking-wide">
+                              Ended
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div className="p-4 flex-1 flex 
+                        flex-col">
+                        <p className="text-sm font-semibold 
+                          text-[#111111] truncate mb-3">
+                          Auction #{auctionId}
+                        </p>
+
+                        {/* Stats grid */}
+                        <div className="grid grid-cols-2 
+                          gap-3 mb-3">
+
+                          {/* Current bid */}
+                          <div className="bg-[#F9FAFB] 
+                            rounded-md p-2">
+                            <p className="text-[10px] 
+                              uppercase tracking-wide 
+                              text-[#6B7280] mb-0.5">
+                              Current Bid
+                            </p>
+                            <p className="text-sm font-bold 
+                              text-[#111111]">
+                              {formatEther(
+                                auction.highestBid || 0n
+                              )} STT
+                            </p>
+                          </div>
+
+                          {/* Price change since watching */}
+                          <div className="bg-[#F9FAFB] 
+                            rounded-md p-2">
+                            <p className="text-[10px] 
+                              uppercase tracking-wide 
+                              text-[#6B7280] mb-0.5">
+                              Since Watching
+                            </p>
+                            <p className={`text-sm font-bold
+                              ${auction.priceIncreased 
+                                ? 'text-[#10B981]' 
+                                : 'text-[#6B7280]'}`}>
+                              {auction.priceIncreased 
+                                ? '+' : ''}
+                              {formatEther(
+                                auction.priceChange || 0n
+                              )} STT
+                            </p>
+                          </div>
+
+                          {/* Countdown */}
+                          <div className="bg-[#F9FAFB] 
+                            rounded-md p-2">
+                            <p className="text-[10px] 
+                              uppercase tracking-wide 
+                              text-[#6B7280] mb-0.5">
+                              Time Left
+                            </p>
+                            <p className={`text-sm font-bold
+                              ${secondsLeft < 3600 && 
+                                secondsLeft > 0 
+                                ? 'text-[#EF4444]' 
+                                : 'text-[#111111]'}`}>
+                              {timeStr}
+                            </p>
+                          </div>
+
+                          {/* Bid count */}
+                          <div className="bg-[#F9FAFB] 
+                            rounded-md p-2">
+                            <p className="text-[10px] 
+                              uppercase tracking-wide 
+                              text-[#6B7280] mb-0.5">
+                              Bids
+                            </p>
+                            <p className="text-sm font-bold 
+                              text-[#111111]">
+                              {auction.highestBid > 0n 
+                                ? '1+' 
+                                : '0'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* View button */}
+                        <button
+                          onClick={() => 
+                            navigate(`/auction/${auctionId}`)
+                          }
+                          className="mt-auto w-full border 
+                            border-[#E5E7EB] text-[#111111] 
+                            text-xs py-2 rounded-md 
+                            hover:border-[#111111] 
+                            hover:bg-[#F9FAFB]
+                            transition-colors"
+                        >
+                          View Auction →
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!isLoadingWatched && 
+              watchlist.length === 0 && (
+              <div className="bg-white border 
+                border-[#E5E7EB] rounded-xl py-24 
+                text-center">
+                <p className="text-4xl mb-4">🔭</p>
+                <p className="text-[#111111] font-medium">
+                  No auctions in your watchlist.
+                </p>
+                <p className="text-xs text-[#9CA3AF] mt-1">
+                  Click the 👁 icon on any auction 
+                  to start watching it.
+                </p>
+                <button
+                  onClick={() => navigate('/')}
+                  className="mt-4 bg-[#111111] text-white 
+                    px-4 py-2 rounded-md text-sm 
+                    hover:bg-[#333333] transition-colors"
+                >
+                  Browse Auctions →
+                </button>
+              </div>
+            )}
+
           </div>
         )}
 
