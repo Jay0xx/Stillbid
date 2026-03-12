@@ -3,52 +3,72 @@ import hre from "hardhat";
 
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
-  
-  console.log("Deploying contracts with:", deployer.address);
-  console.log("Account balance:", 
-    (await hre.ethers.provider.getBalance(deployer.address)).toString());
 
-  // Deploy MockNFT
-  console.log("\n--- Deploying MockNFT ---");
-  const MockNFT = await hre.ethers.getContractFactory("MockNFT");
+  console.log("Deploying with:", deployer.address);
+  console.log("Balance:", 
+    (await hre.ethers.provider.getBalance(
+      deployer.address
+    )).toString()
+  );
+
+  console.log("\nDeploying MockNFT...");
+  const MockNFT = await hre.ethers.getContractFactory(
+    "MockNFT"
+  );
   const mockNFT = await MockNFT.deploy();
   await mockNFT.waitForDeployment();
   const mockNFTAddress = await mockNFT.getAddress();
-  console.log("MockNFT deployed to:", mockNFTAddress);
+  console.log("MockNFT:", mockNFTAddress);
 
-  // Deploy AuctionHouse
-  console.log("\n--- Deploying AuctionHouse ---");
-  const AuctionHouse = await hre.ethers.getContractFactory("AuctionHouse");
+  console.log("\nDeploying AuctionHouse...");
+  const AuctionHouse = await hre.ethers.getContractFactory(
+    "AuctionHouse"
+  );
   const auctionHouse = await AuctionHouse.deploy();
   await auctionHouse.waitForDeployment();
   const auctionHouseAddress = await auctionHouse.getAddress();
-  console.log("AuctionHouse deployed to:", auctionHouseAddress);
+  console.log("AuctionHouse:", auctionHouseAddress);
 
-  // Deploy ReactiveSettlement
-  console.log("\n--- Deploying ReactiveSettlement ---");
-  const ReactiveSettlement = await hre.ethers.getContractFactory("ReactiveSettlement");
-  const reactiveSettlement = await ReactiveSettlement.deploy(auctionHouseAddress);
+  console.log("\nDeploying ReactiveSettlement...");
+  const ReactiveSettlement = 
+    await hre.ethers.getContractFactory(
+      "ReactiveSettlement"
+    );
+  // Passing auctionHouseAddress to ReactiveSettlement constructor
+  const reactiveSettlement = 
+    await ReactiveSettlement.deploy(auctionHouseAddress);
   await reactiveSettlement.waitForDeployment();
-  const reactiveSettlementAddress = await reactiveSettlement.getAddress();
-  console.log("ReactiveSettlement deployed to:", reactiveSettlementAddress);
+  const reactiveAddress = 
+    await reactiveSettlement.getAddress();
+  console.log("ReactiveSettlement:", reactiveAddress);
 
-  // Print summary
   console.log("\n=============================");
-  console.log("DEPLOYMENT COMPLETE");
+  console.log("COPY THESE TO contracts.js:");
   console.log("=============================");
-  console.log("MockNFT:            ", mockNFTAddress);
-  console.log("AuctionHouse:       ", auctionHouseAddress);
-  console.log("ReactiveSettlement: ", reactiveSettlementAddress);
-  console.log("=============================");
-  console.log("\nUpdate frontend/src/config/contracts.js with:");
-  console.log(`export const MOCK_NFT_ADDRESS = "${mockNFTAddress}";`);
-  console.log(`export const AUCTION_HOUSE_ADDRESS = "${auctionHouseAddress}";`);
-  console.log(`export const REACTIVE_SETTLEMENT_ADDRESS = "${reactiveSettlementAddress}";`);
+  console.log(
+    `MOCK_NFT_ADDRESS = "${mockNFTAddress}"`
+  );
+  console.log(
+    `AUCTION_HOUSE_ADDRESS = "${auctionHouseAddress}"`
+  );
+  console.log(
+    `REACTIVE_SETTLEMENT_ADDRESS = "${reactiveAddress}"`
+  );
+
+  // Verify auctionCounter works immediately
+  console.log("\nVerifying AuctionHouse...")
+  const counter = await auctionHouse.auctionCounter()
+  console.log("auctionCounter:", counter.toString())
+  if (counter.toString() === "1") {
+    console.log("✅ AuctionHouse verified working")
+  } else {
+    console.log("❌ AuctionHouse verification failed")
+  }
 }
 
 main()
   .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
+  .catch((err) => {
+    console.error(err);
     process.exit(1);
   });
